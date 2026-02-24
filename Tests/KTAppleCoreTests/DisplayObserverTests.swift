@@ -1,5 +1,6 @@
-import Testing
+import CoreGraphics
 import Foundation
+import Testing
 @testable import KTAppleCore
 
 @Suite("DisplayObserver")
@@ -77,6 +78,7 @@ struct DisplayObserverTests {
         provider.displays = [display(id: 1, name: "Main")]
 
         observer.refresh()  // initial state: [1]
+        delegate.connectedDisplays = []  // reset after initial detection
 
         provider.displays = [
             display(id: 1, name: "Main"),
@@ -125,6 +127,10 @@ struct DisplayObserverTests {
         provider.displays = [display(id: 1)]
 
         observer.refresh()
+        delegate.connectedDisplays = []  // reset after initial detection
+        delegate.disconnectedDisplayIDs = []
+        delegate.resizedDisplays = []
+
         observer.refresh()
 
         #expect(delegate.connectedDisplays.isEmpty)

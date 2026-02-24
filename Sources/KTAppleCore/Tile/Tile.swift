@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// A node in the tile tree representing a region of the screen.

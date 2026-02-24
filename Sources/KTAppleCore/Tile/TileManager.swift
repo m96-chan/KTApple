@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// Manages a tile tree for a single display.

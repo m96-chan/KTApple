@@ -1,5 +1,5 @@
 import AppKit
-import ApplicationServices
+@preconcurrency import ApplicationServices
 
 enum AccessibilityChecker {
     static func isTrusted(promptIfNeeded: Bool) -> Bool {

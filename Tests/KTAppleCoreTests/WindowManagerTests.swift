@@ -1,5 +1,6 @@
-import Testing
+import CoreGraphics
 import Foundation
+import Testing
 @testable import KTAppleCore
 
 @Suite("WindowManager")
@@ -132,7 +133,7 @@ struct WindowManagerTests {
     }
 
     @Test func standardResizableWindowsShouldNotFloat() {
-        let window = sampleWindow(subrole: .standardWindow, isResizable: true)
+        let window = sampleWindow(isResizable: true, subrole: .standardWindow)
         #expect(!WindowManager.shouldFloat(window))
     }
 

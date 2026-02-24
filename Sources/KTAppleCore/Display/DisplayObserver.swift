@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// Monitors display configuration changes and notifies its delegate.

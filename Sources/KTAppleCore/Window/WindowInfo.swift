@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// Subrole of a window, used for auto-float detection.

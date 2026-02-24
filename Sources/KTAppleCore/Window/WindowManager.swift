@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// Manages window operations using an AccessibilityProvider.

@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// Protocol abstracting macOS Accessibility API calls for testability.

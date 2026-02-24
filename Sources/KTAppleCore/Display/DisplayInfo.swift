@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// Snapshot of a display's properties.
