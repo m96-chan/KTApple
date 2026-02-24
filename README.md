@@ -127,22 +127,27 @@ KTApple
 ### Homebrew (planned)
 
 ```sh
-brew install --cask ktapple
+brew tap m96-chan/tap
+brew install --cask --no-quarantine ktapple
 ```
 
 ### Manual Installation
 
 1. Download `.dmg` from [Releases](https://github.com/m96-chan/KTApple/releases)
 2. Move `KTApple.app` to `/Applications`
-3. Grant permission in System Settings > Privacy & Security > Accessibility
+3. Remove quarantine attribute:
+   ```sh
+   xattr -cr /Applications/KTApple.app
+   ```
+4. Grant permission in System Settings > Privacy & Security > Accessibility
 
-> **Note**: Cannot be distributed via the Mac App Store due to Accessibility API sandbox restrictions. Distributed as a Developer ID signed and notarized app.
+> **Note**: Cannot be distributed via the Mac App Store due to Accessibility API sandbox restrictions. The app is ad-hoc signed (no Apple Developer Program). Gatekeeper bypass is required via `xattr -cr` or Homebrew's `--no-quarantine` flag.
 
 ## Distribution
 
 - Distributed outside the Mac App Store (App Sandbox is incompatible with Accessibility API)
-- Signed with Developer ID + Apple Notarization
-- Homebrew Cask distribution planned
+- Ad-hoc signed (no Developer ID / notarization)
+- Homebrew tap: `m96-chan/tap` with `--no-quarantine` cask
 
 ## License
 
