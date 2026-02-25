@@ -62,3 +62,48 @@ jobs:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', steps.version.outputs.version) || github.ref_name }}
           name: KTApple ${{ steps.version.outputs.version }}
           files: build/KTApple-${{ steps.version.outputs.version }}-arm64.dmg
+
+      - name: Update Homebrew tap
+        if: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          DMG_PATH="build/KTApple-${VERSION}-arm64.dmg"
+          SHA256=$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')
+
+          echo "==> Updating Homebrew tap (version=${VERSION}, sha256=${SHA256})"
+
+          CASK_CONTENT="cask \"ktapple\" do
+            version \"${VERSION}\"
+            sha256 \"${SHA256}\"
+
+            url \"https://github.com/m96-chan/KTApple/releases/download/v#{version}/KTApple-#{version}-arm64.dmg\"
+            name \"KTApple\"
+            desc \"KDE Plasma KWin-style tiling window manager for macOS\"
+            homepage \"https://github.com/m96-chan/KTApple\"
+
+            depends_on macos: \">= :ventura\"
+
+            app \"KTApple.app\"
+
+            zap trash: [
+              \"~/Library/Application Support/KTApple\",
+            ]
+          end
+          "
+
+          # Get current file SHA (needed for update)
+          FILE_SHA=$(gh api repos/m96-chan/homebrew-tap/contents/Casks/ktapple.rb --jq '.sha')
+
+          # Update cask file via GitHub API
+          ENCODED=$(echo -n "$CASK_CONTENT" | base64)
+          gh api repos/m96-chan/homebrew-tap/contents/Casks/ktapple.rb \
+            --method PUT \
+            --field message="Update KTApple to ${VERSION}" \
+            --field content="$ENCODED" \
+            --field sha="$FILE_SHA" \
+            --field branch="main" \
+            --jq '.content.path'
+
+          echo "==> Homebrew tap updated"
