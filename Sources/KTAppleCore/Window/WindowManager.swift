@@ -10,6 +10,9 @@ public final class WindowManager {
     /// Currently tracked windows, keyed by window ID.
     public private(set) var trackedWindows: [UInt32: WindowInfo] = [:]
 
+    /// Original frames before tiling, keyed by window ID.
+    private var originalFrames: [UInt32: CGRect] = [:]
+
     public init(provider: AccessibilityProvider) {
         self.provider = provider
     }
@@ -53,16 +56,30 @@ public final class WindowManager {
 
     // MARK: - Tile Assignment
 
+    /// Save the window's current live frame as its pre-tiling original (only if not already saved).
+    public func saveOriginalFrame(id: UInt32) {
+        if originalFrames[id] == nil {
+            originalFrames[id] = provider.windowFrame(id: id)
+        }
+    }
+
     /// Assign a window to a tile and move/resize it to fit.
     public func assignWindow(id: UInt32, to tile: Tile, tileManager: TileManager) {
+        // Save current frame before tiling (only if not already saved)
+        if originalFrames[id] == nil {
+            originalFrames[id] = provider.windowFrame(id: id)
+        }
         tile.addWindow(id: id)
         let frame = tileManager.frame(for: tile)
         setWindowFrame(id: id, frame: frame)
     }
 
-    /// Remove a window from a tile.
+    /// Remove a window from a tile and restore its original size (if saved).
     public func unassignWindow(id: UInt32, from tile: Tile) {
         tile.removeWindow(id: id)
+        if let original = originalFrames.removeValue(forKey: id) {
+            resizeWindow(id: id, to: original.size)
+        }
     }
 
     // MARK: - Auto-Float Detection

@@ -12,6 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeyProvider: LiveHotkeyProvider?
     private var tileEditorWindow: TileEditorWindow?
     private var dragDropHandler: DragDropHandler?
+    private var mouseDownMonitor: Any?
+    private var accessibilityTimer: Timer?
     private var hasShownAccessibilityPrompt = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -63,15 +65,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         setupDragDrop()
 
-        // If accessibility not granted, open System Settings once
+        // If accessibility not granted, open System Settings and poll until granted
         if !coordinator.accessibilityGranted {
             hasShownAccessibilityPrompt = true
             NSWorkspace.shared.open(
                 URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
             )
+            startAccessibilityPolling()
         }
 
-        // Track focused window
+        // Track focused window (on app activation AND mouseDown)
         startFocusTracking()
 
         statusBarController = StatusBarController(onOpenEditor: { [weak self] in
@@ -108,11 +111,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let trusted = AXIsProcessTrusted()
         log.warning("openTileEditor AXIsProcessTrusted=\(trusted)")
         guard trusted else {
-            if !hasShownAccessibilityPrompt {
-                hasShownAccessibilityPrompt = true
-                NSWorkspace.shared.open(
-                    URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-                )
+            // Always open System Preferences when user explicitly requests editor
+            NSWorkspace.shared.open(
+                URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+            )
+            if accessibilityTimer == nil {
+                startAccessibilityPolling()
             }
             return
         }
@@ -167,8 +171,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // Update focused window on every mouseDown (catches window switches within same app)
+        mouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateFocusedWindow()
+            }
+        }
+
         // Initial focus
         updateFocusedWindow()
+    }
+
+    private func startAccessibilityPolling() {
+        accessibilityTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            guard AXIsProcessTrusted() else { return }
+            Task { @MainActor [weak self] in
+                self?.accessibilityTimer?.invalidate()
+                self?.accessibilityTimer = nil
+                self?.coordinator?.start()
+                self?.setupDragDrop()
+                log.warning("Accessibility granted — coordinator restarted, drag-drop enabled")
+            }
+        }
     }
 
     private func updateFocusedWindow() {

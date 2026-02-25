@@ -67,6 +67,23 @@ final class LiveAccessibilityProvider: AccessibilityProvider {
         AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, value)
     }
 
+    func windowFrame(id: UInt32) -> CGRect? {
+        guard let element = axElement(for: id) else { return nil }
+
+        var posRef: CFTypeRef?
+        var sizeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &posRef) == .success,
+              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeRef) == .success else {
+            return nil
+        }
+
+        var position = CGPoint.zero
+        var size = CGSize.zero
+        AXValueGetValue(posRef as! AXValue, .cgPoint, &position)
+        AXValueGetValue(sizeRef as! AXValue, .cgSize, &size)
+        return CGRect(origin: position, size: size)
+    }
+
     // MARK: - Private
 
     /// Find the AXUIElement for a given CGWindowID.

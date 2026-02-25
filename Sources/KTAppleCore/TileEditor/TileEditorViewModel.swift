@@ -58,9 +58,14 @@ public final class TileEditorViewModel: ObservableObject {
     /// Currently selected tile ID.
     @Published public var selectedTileID: UUID?
 
+    /// Minimum gap used in the editor so boundaries remain visible and draggable.
+    static let editorMinGap: CGFloat = 4
+
     public init(tileManager: TileManager, layoutStore: LayoutStore? = nil, layoutKey: LayoutKey? = nil) {
         self.liveTileManager = tileManager
-        self.workingManager = tileManager.deepCopy()
+        let copy = tileManager.deepCopy()
+        copy.gap = max(Self.editorMinGap, copy.gap)
+        self.workingManager = copy
         self.layoutStore = layoutStore
         self.layoutKey = layoutKey
     }
@@ -166,7 +171,9 @@ public final class TileEditorViewModel: ObservableObject {
 
     /// Cancel editing and reset the working copy from the live state.
     public func cancel() {
-        workingManager = liveTileManager.deepCopy()
+        let copy = liveTileManager.deepCopy()
+        copy.gap = max(Self.editorMinGap, copy.gap)
+        workingManager = copy
         isDirty = false
         selectedTileID = nil
         hoveredTileID = nil

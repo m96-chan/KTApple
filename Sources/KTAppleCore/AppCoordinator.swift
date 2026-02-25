@@ -195,7 +195,10 @@ public final class AppCoordinator: DisplayObserverDelegate {
             for (_, manager) in tileManagers {
                 if manager.screenFrame.contains(window.frame.origin) {
                     if let targetTile = firstAvailableLeaf(in: manager) {
-                        windowManager.assignWindow(id: window.id, to: targetTile, tileManager: manager)
+                        // Register only — don't resize on startup
+                        targetTile.addWindow(id: window.id)
+                        // Save current size so drag-out can restore it
+                        windowManager.saveOriginalFrame(id: window.id)
                     }
                     break
                 }
@@ -244,6 +247,9 @@ public final class AppCoordinator: DisplayObserverDelegate {
         guard let (manager, currentTile) = findTileContaining(windowID: windowID) else { return }
         guard let adjacentTile = manager.adjacentTile(to: currentTile, direction: direction) else { return }
 
+        // Save current frame before tiling resize (only if not already saved)
+        windowManager.saveOriginalFrame(id: windowID)
+
         currentTile.removeWindow(id: windowID)
         adjacentTile.addWindow(id: windowID)
 
@@ -259,7 +265,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
 
     private func toggleFloating(windowID: UInt32) {
         guard let (_, tile) = findTileContaining(windowID: windowID) else { return }
-        tile.removeWindow(id: windowID)
+        windowManager.unassignWindow(id: windowID, from: tile)
     }
 }
 
@@ -276,4 +282,9 @@ extension AppCoordinator: DragDropDelegate {
     }
 
     public func didCancelDrop() {}
+
+    public func didDragWindowFromTile(_ windowID: UInt32) {
+        guard let (_, tile) = findTileContaining(windowID: windowID) else { return }
+        windowManager.unassignWindow(id: windowID, from: tile)
+    }
 }

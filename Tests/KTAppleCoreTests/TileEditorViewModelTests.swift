@@ -257,8 +257,11 @@ struct TileEditorViewModelTests {
         let frames = vm.tileFrames()
 
         #expect(frames.count == 2)
-        #expect(isApprox(frames[0].frame.width, 960))
-        #expect(isApprox(frames[1].frame.width, 960))
+        // Editor enforces min gap of 4: outer=4, inner=2 → each tile is 960 - 4 - 2 = 954
+        let editorGap = TileEditorViewModel.editorMinGap
+        let expectedWidth = 960 - editorGap - editorGap / 2
+        #expect(isApprox(frames[0].frame.width, expectedWidth))
+        #expect(isApprox(frames[1].frame.width, expectedWidth))
     }
 
     // MARK: - Tile Lookup

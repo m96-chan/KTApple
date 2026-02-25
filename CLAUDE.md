@@ -74,14 +74,14 @@ public var id: String { "\(leftTileID)_\(rightTileID)" }
 When moving windows between displays, macOS enforces size constraints. Always:
 1. `resizeWindow` → 2. `moveWindow` → 3. `resizeWindow` (same size again)
 
-### macOS App Installation — Must delete old .app before replacing
+### Reinstall: must rm -rf before cp -R
 
-When installing a new build to `/Applications`, **always delete the old .app first**. macOS caches the old binary and simply overwriting (drag & drop) does not replace it. The old version keeps running even after copying the new one.
-
+`cp -R` does NOT overwrite an existing `.app` bundle reliably on macOS. Always delete first:
 ```sh
+osascript -e 'tell application "KTApple" to quit' 2>/dev/null; sleep 1
 rm -rf /Applications/KTApple.app
-cp -R .build/release/KTApple.app /Applications/
-xattr -cr /Applications/KTApple.app
+cp -R build/KTApple.app /Applications/KTApple.app
+open /Applications/KTApple.app
 ```
 
 ### Tile Coordinate System

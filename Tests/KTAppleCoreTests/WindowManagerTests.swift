@@ -120,6 +120,61 @@ struct WindowManagerTests {
         #expect(!tile.windowIDs.contains(1))
     }
 
+    @Test func assignWindowSavesOriginalSize() {
+        let originalFrame = CGRect(x: 50, y: 50, width: 400, height: 300)
+        let (manager, provider) = makeManager()
+        provider.windows = [sampleWindow(id: 1, frame: originalFrame)]
+        _ = manager.discoverWindows()
+
+        let tile = Tile()
+        let tileManager = TileManager(displayID: 1, screenFrame: CGRect(x: 0, y: 0, width: 1920, height: 1080), gap: 0)
+        manager.assignWindow(id: 1, to: tile, tileManager: tileManager)
+        provider.operationLog.removeAll()
+
+        // Unassign should restore the original size only
+        manager.unassignWindow(id: 1, from: tile)
+        #expect(!tile.windowIDs.contains(1))
+        #expect(provider.operationLog == [
+            .resize(id: 1, size: originalFrame.size),
+        ])
+    }
+
+    @Test func assignWindowDoesNotOverwriteSavedSize() {
+        let originalFrame = CGRect(x: 50, y: 50, width: 400, height: 300)
+        let (manager, provider) = makeManager()
+        provider.windows = [sampleWindow(id: 1, frame: originalFrame)]
+        _ = manager.discoverWindows()
+
+        let tile1 = Tile()
+        let tile2 = Tile()
+        let tileManager = TileManager(displayID: 1, screenFrame: CGRect(x: 0, y: 0, width: 1920, height: 1080), gap: 0)
+        tileManager.split(tileManager.root, direction: .horizontal, ratio: 0.5)
+
+        // First assign saves original size
+        manager.assignWindow(id: 1, to: tile1, tileManager: tileManager)
+
+        // Re-assign to different tile should NOT overwrite the saved original
+        manager.assignWindow(id: 1, to: tile2, tileManager: tileManager)
+        provider.operationLog.removeAll()
+
+        manager.unassignWindow(id: 1, from: tile2)
+        // Should restore to the ORIGINAL size, not the tile1 size
+        #expect(provider.operationLog == [
+            .resize(id: 1, size: originalFrame.size),
+        ])
+    }
+
+    @Test func unassignWindowWithoutSavedFrameDoesNotResize() {
+        let (manager, provider) = makeManager()
+        let tile = Tile()
+        tile.addWindow(id: 1)
+
+        // No assignWindow was called, so no original frame saved
+        manager.unassignWindow(id: 1, from: tile)
+        #expect(!tile.windowIDs.contains(1))
+        #expect(provider.operationLog.isEmpty)
+    }
+
     // MARK: - Auto-Float Detection
 
     @Test func dialogWindowsShouldFloat() {
@@ -190,6 +245,10 @@ final class MockAccessibilityProvider: AccessibilityProvider {
 
     func discoverWindows() -> [WindowInfo] {
         windows
+    }
+
+    func windowFrame(id: UInt32) -> CGRect? {
+        windows.first { $0.id == id }?.frame
     }
 
     func moveWindow(id: UInt32, to position: CGPoint) {

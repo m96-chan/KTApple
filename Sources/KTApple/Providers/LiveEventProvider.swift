@@ -1,4 +1,5 @@
 import AppKit
+@preconcurrency import ApplicationServices
 import CoreGraphics
 import KTAppleCore
 
@@ -54,8 +55,45 @@ final class LiveEventProvider: EventProvider {
         return CGPoint(x: cocoaLocation.x, y: primaryHeight - cocoaLocation.y)
     }
 
-    /// Find the topmost window at a Quartz screen point, skipping our own app's windows.
+    /// Find the topmost window at a Quartz screen point using the Accessibility API.
+    ///
+    /// Uses AXUIElementCopyElementAtPosition which correctly resolves the
+    /// frontmost element regardless of CGWindowList z-order timing.
     private static func windowAtPoint(_ point: CGPoint) -> UInt32? {
+        let systemWide = AXUIElementCreateSystemWide()
+        var element: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(
+            systemWide, Float(point.x), Float(point.y), &element
+        ) == .success, let element else {
+            return windowAtPointFallback(point)
+        }
+
+        // Walk up the hierarchy to find the window element
+        var current: AXUIElement = element
+        for _ in 0..<10 {  // guard against infinite loops
+            var role: CFTypeRef?
+            if AXUIElementCopyAttributeValue(current, kAXRoleAttribute as CFString, &role) == .success,
+               let roleStr = role as? String, roleStr == (kAXWindowRole as String) {
+                var pid: pid_t = 0
+                AXUIElementGetPid(current, &pid)
+                if pid == ProcessInfo.processInfo.processIdentifier { return nil }
+
+                var windowID: CGWindowID = 0
+                if _AXUIElementGetWindow(current, &windowID) == .success {
+                    return windowID
+                }
+            }
+            var parent: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(current, kAXParentAttribute as CFString, &parent) == .success,
+                  let parentEl = parent else { break }
+            current = (parentEl as! AXUIElement)
+        }
+
+        return windowAtPointFallback(point)
+    }
+
+    /// Fallback: scan CGWindowList (used when Accessibility API fails).
+    private static func windowAtPointFallback(_ point: CGPoint) -> UInt32? {
         guard let windowList = CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements],
             kCGNullWindowID
@@ -73,7 +111,6 @@ final class LiveEventProvider: EventProvider {
                 continue
             }
 
-            // Skip our own app's windows
             if let pid = dict[kCGWindowOwnerPID as String] as? Int32, pid == ownPID {
                 continue
             }

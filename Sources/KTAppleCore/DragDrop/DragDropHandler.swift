@@ -24,6 +24,9 @@ public final class DragDropHandler {
     /// Window ID from the last mouseDown, held until Shift is detected or mouseUp.
     private var pendingWindowID: UInt32?
 
+    /// Whether we already notified the delegate about a non-shift drag this gesture.
+    private var didNotifyUntile: Bool = false
+
     public init(
         eventProvider: EventProvider,
         overlayProvider: OverlayProvider,
@@ -63,6 +66,10 @@ public final class DragDropHandler {
             } else if event.modifiers.contains(.shift), let windowID = pendingWindowID {
                 // Shift pressed mid-drag → start drag with the window from mouseDown
                 beginDrag(windowID: windowID, location: event.location)
+            } else if !event.modifiers.contains(.shift), !didNotifyUntile, let windowID = pendingWindowID {
+                // Normal drag (no Shift) → unassign from tile
+                didNotifyUntile = true
+                delegate?.didDragWindowFromTile(windowID)
             }
 
         case .ended:
@@ -70,6 +77,7 @@ public final class DragDropHandler {
                 endDrag(location: event.location)
             }
             pendingWindowID = nil
+            didNotifyUntile = false
 
         case .moved:
             break
@@ -106,6 +114,7 @@ public final class DragDropHandler {
         isDragging = false
         draggedWindowID = nil
         pendingWindowID = nil
+        didNotifyUntile = false
         highlightedTileID = nil
         overlayProvider.hideHighlight()
     }

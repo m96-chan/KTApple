@@ -59,6 +59,10 @@ final class CoordinatorMockAccessibilityProvider: AccessibilityProvider {
     func resizeWindow(id: UInt32, to size: CGSize) {
         operations.append(.resize(id, size))
     }
+
+    func windowFrame(id: UInt32) -> CGRect? {
+        windows.first { $0.id == id }?.frame
+    }
 }
 
 enum CoordinatorAccessibilityOp {

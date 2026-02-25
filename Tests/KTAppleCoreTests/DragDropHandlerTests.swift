@@ -43,6 +43,8 @@ final class MockDragDropDelegate: DragDropDelegate {
     var droppedWindowID: UInt32?
     var droppedOnTileID: UUID?
     var cancelCount = 0
+    var draggedFromTileWindowID: UInt32?
+    var dragFromTileCount = 0
 
     func didDropWindow(_ windowID: UInt32, onTile tileID: UUID) {
         droppedWindowID = windowID
@@ -51,6 +53,11 @@ final class MockDragDropDelegate: DragDropDelegate {
 
     func didCancelDrop() {
         cancelCount += 1
+    }
+
+    func didDragWindowFromTile(_ windowID: UInt32) {
+        draggedFromTileWindowID = windowID
+        dragFromTileCount += 1
     }
 }
 
@@ -288,6 +295,52 @@ struct DragDropHandlerTests {
         handler.startMonitoring()
         handler.stopMonitoring()
         #expect(!event.isMonitoring)
+    }
+
+    // MARK: - Drag From Tile (no Shift)
+
+    @Test func normalDragNotifiesUntile() {
+        let (handler, _, _, delegate, _) = makeHandler()
+        handler.handleMouseEvent(MouseEvent(
+            location: CGPoint(x: 500, y: 500),
+            phase: .began,
+            modifiers: [],
+            windowID: 42
+        ))
+        handler.handleMouseEvent(MouseEvent(
+            location: CGPoint(x: 510, y: 500),
+            phase: .changed,
+            modifiers: []
+        ))
+
+        #expect(delegate.draggedFromTileWindowID == 42)
+        #expect(delegate.dragFromTileCount == 1)
+        #expect(!handler.isDragging) // not a shift-drag
+    }
+
+    @Test func normalDragNotifiesOnlyOnce() {
+        let (handler, _, _, delegate, _) = makeHandler()
+        handler.handleMouseEvent(MouseEvent(
+            location: CGPoint(x: 500, y: 500),
+            phase: .began,
+            modifiers: [],
+            windowID: 42
+        ))
+        handler.handleMouseEvent(MouseEvent(
+            location: CGPoint(x: 510, y: 500),
+            phase: .changed,
+            modifiers: []
+        ))
+        #expect(delegate.dragFromTileCount == 1)
+
+        handler.handleMouseEvent(MouseEvent(
+            location: CGPoint(x: 520, y: 500),
+            phase: .changed,
+            modifiers: []
+        ))
+
+        // Should not notify again
+        #expect(delegate.dragFromTileCount == 1)
     }
 
     @Test func endWithoutDragIsIgnored() {
