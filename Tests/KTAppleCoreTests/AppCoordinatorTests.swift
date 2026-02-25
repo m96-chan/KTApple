@@ -331,6 +331,41 @@ struct AppCoordinatorTests {
         #expect(coordinator.focusedWindowID == 20)
     }
 
+    @Test func focusNavigatesThreeTiles() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let (coordinator, _, _, _, _, _) = makeCoordinator(displays: [display])
+        coordinator.start()
+
+        let manager = coordinator.tileManagers[1]!
+        // Create [A, [B, C]] layout
+        let (a, right) = manager.split(manager.root, direction: .horizontal, ratio: 0.333)
+        let (b, c) = manager.split(right, direction: .horizontal, ratio: 0.5)
+        a.addWindow(id: 10)
+        b.addWindow(id: 20)
+        c.addWindow(id: 30)
+
+        // Start at B (middle), go left → should reach A
+        coordinator.setFocusedWindowID(20)
+        coordinator.handleAction(.focusLeft)
+        #expect(coordinator.focusedWindowID == 10)
+
+        // From A, go right → should reach B
+        coordinator.handleAction(.focusRight)
+        #expect(coordinator.focusedWindowID == 20)
+
+        // From B, go right → should reach C
+        coordinator.handleAction(.focusRight)
+        #expect(coordinator.focusedWindowID == 30)
+
+        // From C, go left → should reach B
+        coordinator.handleAction(.focusLeft)
+        #expect(coordinator.focusedWindowID == 20)
+
+        // From B, go left → should reach A again
+        coordinator.handleAction(.focusLeft)
+        #expect(coordinator.focusedWindowID == 10)
+    }
+
     @Test func focusActionRaisesTargetWindow() {
         let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
         let (coordinator, _, _, _, accessibilityProvider, _) = makeCoordinator(displays: [display])

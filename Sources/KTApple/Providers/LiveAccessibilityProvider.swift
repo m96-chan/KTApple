@@ -1,3 +1,4 @@
+import AppKit
 @preconcurrency import ApplicationServices
 import CoreGraphics
 import Foundation
@@ -69,15 +70,19 @@ final class LiveAccessibilityProvider: AccessibilityProvider {
 
     func focusWindow(id: UInt32) {
         guard let element = axElement(for: id) else { return }
+
+        // Raise the window visually (most reliable way to bring it to front)
+        AXUIElementPerformAction(element, kAXRaiseAction as CFString)
         AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
         AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
 
-        // Also raise the owning application
+        // Activate the owning application via NSRunningApplication (more reliable than AX frontmost)
         guard let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]],
               let dict = windowList.first(where: { ($0[kCGWindowNumber as String] as? UInt32) == id }),
               let pid = dict[kCGWindowOwnerPID as String] as? Int32 else { return }
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+        if let runningApp = NSRunningApplication(processIdentifier: pid) {
+            runningApp.activate()
+        }
     }
 
     func windowFrame(id: UInt32) -> CGRect? {

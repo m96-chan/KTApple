@@ -252,6 +252,41 @@ struct TileManagerTests {
         #expect(manager.adjacentTile(to: bottom, direction: .up) === top)
     }
 
+    @Test func adjacentTileThreeColumnsNested() {
+        // Layout: [A, [B, C]] — split root, then split right half
+        let manager = TileManager(displayID: 1, screenFrame: screenFrame, gap: 0)
+        let (a, right) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
+        let (b, c) = manager.split(right, direction: .horizontal, ratio: 0.5)
+
+        // B → left should find A (across nesting boundary)
+        #expect(manager.adjacentTile(to: b, direction: .left) === a)
+        // A → right should find B
+        #expect(manager.adjacentTile(to: a, direction: .right) === b)
+        // B → right should find C
+        #expect(manager.adjacentTile(to: b, direction: .right) === c)
+        // C → left should find B
+        #expect(manager.adjacentTile(to: c, direction: .left) === b)
+    }
+
+    @Test func adjacentTileThreeColumnsFlat() {
+        // Layout: [A, B, C] — three flat siblings
+        let manager = TileManager(displayID: 1, screenFrame: screenFrame, gap: 0)
+        let (a, _) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
+        let b = Tile(proportion: 0.25)
+        manager.root.children[1].proportion = 0.25
+        manager.root.insertChild(b, at: 1)
+        let c = manager.root.children[2]
+
+        // A → right should find B
+        #expect(manager.adjacentTile(to: a, direction: .right) === b)
+        // B → left should find A
+        #expect(manager.adjacentTile(to: b, direction: .left) === a)
+        // B → right should find C
+        #expect(manager.adjacentTile(to: b, direction: .right) === c)
+        // C → left should find B
+        #expect(manager.adjacentTile(to: c, direction: .left) === b)
+    }
+
     // MARK: - Helpers
 
     private func isApprox(_ a: CGFloat, _ b: CGFloat, tolerance: CGFloat = 1.0) -> Bool {

@@ -17,6 +17,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mouseDownMonitor: Any?
     private var accessibilityTimer: Timer?
     private var hasShownAccessibilityPrompt = false
+    /// Timestamp of last hotkey-driven focus change. Used to prevent
+    /// `updateFocusedWindow` from overwriting `focusedWindowID` with
+    /// stale data before macOS fully processes the focus switch.
+    private var lastHotkeyFocusTime: Date?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         log.warning("applicationDidFinishLaunching AXIsProcessTrusted=\(AXIsProcessTrusted())")
@@ -53,8 +57,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Wire Carbon hotkey events → coordinator
-        hotkeyProvider.onHotkey = { [weak coordinator] action in
+        hotkeyProvider.onHotkey = { [weak self, weak coordinator] action in
             coordinator?.handleAction(action)
+            // Track focus-related hotkey actions to prevent updateFocusedWindow race
+            switch action {
+            case .focusLeft, .focusRight, .focusUp, .focusDown:
+                self?.lastHotkeyFocusTime = Date()
+            default:
+                break
+            }
         }
 
         // Restore persisted gap size
@@ -275,6 +286,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateFocusedWindow() {
+        // Skip if a hotkey just changed focus — macOS may not have fully processed the switch yet
+        if let lastTime = lastHotkeyFocusTime, Date().timeIntervalSince(lastTime) < 0.5 {
+            return
+        }
+
         guard let app = NSWorkspace.shared.frontmostApplication else { return }
         let pid = app.processIdentifier
         let axApp = AXUIElementCreateApplication(pid)
