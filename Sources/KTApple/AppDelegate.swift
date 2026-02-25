@@ -10,8 +10,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBarController: StatusBarController?
     private var coordinator: AppCoordinator?
     private var hotkeyProvider: LiveHotkeyProvider?
-    private var tileEditorWindow: TileEditorWindow?
+    private var tileEditorWindows: [UInt32: TileEditorWindow] = [:]
     private var dragDropHandler: DragDropHandler?
+    private var gapResizeHandler: GapResizeHandler?
     private var mouseDownMonitor: Any?
     private var accessibilityTimer: Timer?
     private var hasShownAccessibilityPrompt = false
@@ -23,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let hotkeyProvider = LiveHotkeyProvider()
         let accessibilityProvider = LiveAccessibilityProvider()
         let storageProvider = LiveStorageProvider()
+        let spaceProvider = LiveSpaceProvider()
 
         // Ensure Application Support directory exists
         let supportDir = FileManager.default.urls(
@@ -38,7 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hotkeyProvider: hotkeyProvider,
             accessibilityAPIProvider: accessibilityProvider,
             storageProvider: storageProvider,
-            layoutFilePath: layoutPath
+            layoutFilePath: layoutPath,
+            spaceProvider: spaceProvider
         )
 
         coordinator.onOpenEditor = { [weak self] in
@@ -87,14 +90,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupDragDrop() {
         guard let coordinator,
               coordinator.accessibilityGranted,
-              let (_, tileManager) = coordinator.tileManagers.first else { return }
+              !coordinator.tileManagers.isEmpty else { return }
 
         let eventProvider = LiveEventProvider()
         let overlayProvider = LiveOverlayProvider()
         let handler = DragDropHandler(
             eventProvider: eventProvider,
             overlayProvider: overlayProvider,
-            tileManager: tileManager
+            tileManagerResolver: { [weak self] point in
+                self?.coordinator?.tileManagers.values.first {
+                    $0.screenFrame.contains(point)
+                }
+            }
         )
         handler.delegate = coordinator
         handler.startMonitoring()
@@ -131,30 +138,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             setupDragDrop()
         }
 
-        // Toggle: if editor is already visible, close it
-        if let existing = tileEditorWindow, existing.isVisible {
-            existing.close()
-            tileEditorWindow = nil
+        // Toggle: if any editor is visible, close all
+        if tileEditorWindows.values.contains(where: { $0.isVisible }) {
+            for (_, editor) in tileEditorWindows {
+                editor.close()
+            }
+            tileEditorWindows.removeAll()
             return
         }
 
-        guard let coordinator,
-              let (displayID, tileManager) = coordinator.tileManagers.first else {
+        guard let coordinator, !coordinator.tileManagers.isEmpty else {
             log.warning("openTileEditor: no coordinator or tileManager. coordinatorNil=\(self.coordinator == nil) tileManagers=\(self.coordinator?.tileManagers.count ?? -1)")
             return
         }
 
-        let layoutKey = LayoutKey(displayID: displayID)
+        // Close any stale editors
+        for (_, editor) in tileEditorWindows {
+            editor.close()
+        }
+        tileEditorWindows.removeAll()
 
-        log.warning("openTileEditor: showing editor for display \(tileManager.displayID)")
-        tileEditorWindow?.close()
-        let editorWindow = TileEditorWindow()
-        editorWindow.show(
-            tileManager: tileManager,
-            layoutStore: coordinator.layoutStore,
-            layoutKey: layoutKey
-        )
-        self.tileEditorWindow = editorWindow
+        // Open an editor on each display
+        for (displayID, tileManager) in coordinator.tileManagers {
+            let layoutKey = LayoutKey(displayID: displayID, workspaceIndex: coordinator.currentWorkspaceIndex(for: displayID))
+            let screen = NSScreen.screen(for: displayID)
+
+            log.warning("openTileEditor: showing editor for display \(tileManager.displayID)")
+            let editorWindow = TileEditorWindow()
+            editorWindow.show(
+                tileManager: tileManager,
+                layoutStore: coordinator.layoutStore,
+                layoutKey: layoutKey,
+                screen: screen
+            )
+            tileEditorWindows[displayID] = editorWindow
+        }
     }
 
     // MARK: - Focus Tracking

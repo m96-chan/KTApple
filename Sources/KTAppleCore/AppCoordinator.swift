@@ -12,9 +12,17 @@ public final class AppCoordinator: DisplayObserverDelegate {
     private let hotkeyManager: HotkeyManager
     private let windowManager: WindowManager
     public let layoutStore: LayoutStore
+    private let spaceProvider: SpaceProvider?
 
-    /// Per-display tile managers.
+    /// Per-display tile managers (active set — one per display, current Space).
     public private(set) var tileManagers: [UInt32: TileManager] = [:]
+
+    /// Per-display, per-space tile manager cache.
+    /// Key: displayID → [spaceID: TileManager]
+    private var spaceManagers: [UInt32: [Int: TileManager]] = [:]
+
+    /// Tracks the active space ID per display to detect changes.
+    private var activeSpaceIDs: [UInt32: Int] = [:]
 
     /// Called when gap size changes, for persistence.
     public var onGapSizeChanged: ((CGFloat) -> Void)?
@@ -41,19 +49,24 @@ public final class AppCoordinator: DisplayObserverDelegate {
     /// Callback for actions that require the UI layer (e.g. opening the tile editor).
     public var onOpenEditor: (() -> Void)?
 
+    /// Callback when active space changes (for UI layer to react).
+    public var onSpaceChanged: (() -> Void)?
+
     public init(
         accessibilityProvider: AccessibilityCheckProvider,
         displayProvider: DisplayProvider,
         hotkeyProvider: HotkeyProvider,
         accessibilityAPIProvider: AccessibilityProvider,
         storageProvider: StorageProvider,
-        layoutFilePath: String = "layouts.json"
+        layoutFilePath: String = "layouts.json",
+        spaceProvider: SpaceProvider? = nil
     ) {
         self.accessibilityProvider = accessibilityProvider
         self.displayObserver = DisplayObserver(provider: displayProvider)
         self.hotkeyManager = HotkeyManager(provider: hotkeyProvider)
         self.windowManager = WindowManager(provider: accessibilityAPIProvider)
         self.layoutStore = LayoutStore(provider: storageProvider, filePath: layoutFilePath)
+        self.spaceProvider = spaceProvider
 
         displayObserver.delegate = self
         hotkeyManager.onHotkey = { [weak self] action in
@@ -72,9 +85,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
         // Discover displays and create tile managers (always, even without accessibility)
         let displays = displayObserver.connectedDisplays()
         for display in displays {
-            createTileManager(for: display)
-            let key = LayoutKey(displayID: display.id)
-            layoutStore.apply(to: tileManagers[display.id]!, for: key)
+            setupDisplayManager(for: display)
         }
 
         // Window operations and hotkeys require accessibility permission
@@ -85,6 +96,9 @@ public final class AppCoordinator: DisplayObserverDelegate {
 
         hotkeyManager.registerDefaults()
         displayObserver.startObserving()
+        spaceProvider?.startObserving { [weak self] in
+            self?.handleSpaceChanged()
+        }
 
         isRunning = true
     }
@@ -92,6 +106,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
     /// Stop the coordinator.
     public func stop() {
         displayObserver.stopObserving()
+        spaceProvider?.stopObserving()
         hotkeyManager.unregisterAll()
         isRunning = false
     }
@@ -135,22 +150,76 @@ public final class AppCoordinator: DisplayObserverDelegate {
     // MARK: - Display Events
 
     public func displayDidConnect(_ display: DisplayInfo) {
-        createTileManager(for: display)
-        let key = LayoutKey(displayID: display.id)
-        layoutStore.apply(to: tileManagers[display.id]!, for: key)
+        setupDisplayManager(for: display)
     }
 
     public func displayDidDisconnect(displayID: UInt32) {
         if let manager = tileManagers[displayID] {
-            let key = LayoutKey(displayID: displayID)
+            let key = layoutKey(for: displayID)
             layoutStore.save(tileManager: manager, for: key)
         }
         tileManagers.removeValue(forKey: displayID)
+        spaceManagers.removeValue(forKey: displayID)
+        activeSpaceIDs.removeValue(forKey: displayID)
     }
 
     public func displayDidResize(_ display: DisplayInfo) {
         if let manager = tileManagers[display.id] {
             manager.screenFrame = display.frame
+        }
+    }
+
+    // MARK: - Space Changes
+
+    /// Handle active space change notification.
+    private func handleSpaceChanged() {
+        guard let spaceProvider else { return }
+
+        var didChange = false
+
+        for (displayID, manager) in tileManagers {
+            let newSpaceID = spaceProvider.activeSpaceID(for: displayID)
+            let oldSpaceID = activeSpaceIDs[displayID]
+
+            guard newSpaceID != oldSpaceID, newSpaceID != 0 else { continue }
+
+            // Save current layout for the old space
+            if let oldSpace = oldSpaceID {
+                let oldKey = LayoutKey(displayID: displayID, workspaceIndex: workspaceIndex(spaceID: oldSpace, displayID: displayID))
+                layoutStore.save(tileManager: manager, for: oldKey)
+            }
+
+            // Look up or create manager for the new space
+            let newManager: TileManager
+            if let cached = spaceManagers[displayID]?[newSpaceID] {
+                newManager = cached
+            } else {
+                newManager = TileManager(displayID: displayID, screenFrame: manager.screenFrame, gap: gapSize)
+                let newKey = LayoutKey(displayID: displayID, workspaceIndex: workspaceIndex(spaceID: newSpaceID, displayID: displayID))
+                layoutStore.apply(to: newManager, for: newKey)
+                spaceManagers[displayID, default: [:]][newSpaceID] = newManager
+            }
+
+            tileManagers[displayID] = newManager
+            activeSpaceIDs[displayID] = newSpaceID
+            didChange = true
+        }
+
+        if didChange {
+            // Re-discover and assign windows for new space
+            if accessibilityGranted {
+                // Clear window assignments on new managers
+                for (_, manager) in tileManagers {
+                    for leaf in manager.leafTiles() {
+                        for wid in leaf.windowIDs {
+                            leaf.removeWindow(id: wid)
+                        }
+                    }
+                }
+                let windows = windowManager.discoverWindows()
+                assignWindowsToTiles(windows)
+            }
+            onSpaceChanged?()
         }
     }
 
@@ -174,17 +243,51 @@ public final class AppCoordinator: DisplayObserverDelegate {
 
         manager.split(tile, direction: direction, ratio: ratio)
 
-        let key = LayoutKey(displayID: displayID)
+        let key = layoutKey(for: displayID)
         layoutStore.save(tileManager: manager, for: key)
 
         return true
     }
 
+    /// Current workspace index for a display (for use by UI layer).
+    public func currentWorkspaceIndex(for displayID: UInt32) -> Int {
+        guard spaceProvider != nil,
+              let spaceID = activeSpaceIDs[displayID] else {
+            return 0
+        }
+        return workspaceIndex(spaceID: spaceID, displayID: displayID)
+    }
+
     // MARK: - Private
 
-    private func createTileManager(for display: DisplayInfo) {
+    /// Set up a tile manager for a display, using space-aware layout keys.
+    private func setupDisplayManager(for display: DisplayInfo) {
         let manager = TileManager(displayID: display.id, screenFrame: display.frame, gap: gapSize)
+
+        if let spaceProvider {
+            let spaceID = spaceProvider.activeSpaceID(for: display.id)
+            activeSpaceIDs[display.id] = spaceID
+            let key = LayoutKey(displayID: display.id, workspaceIndex: workspaceIndex(spaceID: spaceID, displayID: display.id))
+            layoutStore.apply(to: manager, for: key)
+            spaceManagers[display.id, default: [:]][spaceID] = manager
+        } else {
+            let key = LayoutKey(displayID: display.id)
+            layoutStore.apply(to: manager, for: key)
+        }
+
         tileManagers[display.id] = manager
+    }
+
+    /// Build a LayoutKey for the current space on a display.
+    private func layoutKey(for displayID: UInt32) -> LayoutKey {
+        LayoutKey(displayID: displayID, workspaceIndex: currentWorkspaceIndex(for: displayID))
+    }
+
+    /// Convert a runtime space ID to a stable 0-based workspace index for persistence.
+    private func workspaceIndex(spaceID: Int, displayID: UInt32) -> Int {
+        guard let spaceProvider else { return 0 }
+        let ids = spaceProvider.spaceIDs(for: displayID)
+        return ids.firstIndex(of: spaceID) ?? 0
     }
 
     private func assignWindowsToTiles(_ windows: [WindowInfo]) {

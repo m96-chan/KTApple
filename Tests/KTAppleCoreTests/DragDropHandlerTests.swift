@@ -69,7 +69,13 @@ struct DragDropHandlerTests {
         let eventProvider = MockEventProvider()
         let overlayProvider = MockOverlayProvider()
         let manager = TileManager(displayID: 1, screenFrame: screenFrame, gap: 0)
-        let handler = DragDropHandler(eventProvider: eventProvider, overlayProvider: overlayProvider, tileManager: manager)
+        let handler = DragDropHandler(
+            eventProvider: eventProvider,
+            overlayProvider: overlayProvider,
+            tileManagerResolver: { point in
+                manager.screenFrame.contains(point) ? manager : nil
+            }
+        )
         let delegate = MockDragDropDelegate()
         handler.delegate = delegate
         return (handler, eventProvider, overlayProvider, delegate, manager)
@@ -354,5 +360,44 @@ struct DragDropHandlerTests {
 
         #expect(delegate.droppedWindowID == nil)
         #expect(delegate.cancelCount == 0)
+    }
+
+    // MARK: - Multi-Display
+
+    @Test func resolverRoutesToCorrectDisplay() {
+        let eventProvider = MockEventProvider()
+        let overlayProvider = MockOverlayProvider()
+        let manager1 = TileManager(displayID: 1, screenFrame: CGRect(x: 0, y: 0, width: 1920, height: 1080), gap: 0)
+        let manager2 = TileManager(displayID: 2, screenFrame: CGRect(x: 1920, y: 0, width: 1920, height: 1080), gap: 0)
+        let managers = [manager1, manager2]
+
+        let handler = DragDropHandler(
+            eventProvider: eventProvider,
+            overlayProvider: overlayProvider,
+            tileManagerResolver: { point in
+                managers.first { $0.screenFrame.contains(point) }
+            }
+        )
+        let delegate = MockDragDropDelegate()
+        handler.delegate = delegate
+
+        let (_, right2) = manager2.split(manager2.root, direction: .horizontal, ratio: 0.5)
+
+        // Drag on display 2
+        handler.handleMouseEvent(MouseEvent(
+            location: CGPoint(x: 2880, y: 500), // right half of display 2
+            phase: .began,
+            modifiers: .shift,
+            windowID: 99
+        ))
+        handler.handleMouseEvent(MouseEvent(
+            location: CGPoint(x: 2880, y: 500),
+            phase: .ended,
+            modifiers: .shift,
+            windowID: 99
+        ))
+
+        #expect(delegate.droppedWindowID == 99)
+        #expect(delegate.droppedOnTileID == right2.id)
     }
 }

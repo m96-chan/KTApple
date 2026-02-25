@@ -33,7 +33,13 @@ struct GapResizeHandlerTests {
         let eventProvider = MockEventProvider()
         let cursorProvider = MockCursorProvider()
         let manager = TileManager(displayID: 1, screenFrame: screenFrame, gap: gap)
-        let handler = GapResizeHandler(eventProvider: eventProvider, cursorProvider: cursorProvider, tileManager: manager)
+        let handler = GapResizeHandler(
+            eventProvider: eventProvider,
+            cursorProvider: cursorProvider,
+            tileManagerResolver: { point in
+                manager.screenFrame.contains(point) ? manager : nil
+            }
+        )
         let delegate = MockGapResizeDelegate()
         handler.delegate = delegate
         return (handler, eventProvider, cursorProvider, delegate, manager)
@@ -45,7 +51,7 @@ struct GapResizeHandlerTests {
         let (handler, _, _, _, manager) = makeHandler()
         manager.split(manager.root, direction: .horizontal, ratio: 0.5)
 
-        let boundaries = handler.tileBoundaries()
+        let boundaries = handler.tileBoundaries(from: [manager])
 
         #expect(boundaries.count == 1)
         #expect(boundaries[0].axis == .horizontal)
@@ -55,7 +61,7 @@ struct GapResizeHandlerTests {
         let (handler, _, _, _, manager) = makeHandler()
         manager.split(manager.root, direction: .vertical, ratio: 0.5)
 
-        let boundaries = handler.tileBoundaries()
+        let boundaries = handler.tileBoundaries(from: [manager])
 
         #expect(boundaries.count == 1)
         #expect(boundaries[0].axis == .vertical)
@@ -68,7 +74,7 @@ struct GapResizeHandlerTests {
         manager.root.children[1].proportion = 0.25
         manager.root.insertChild(third, at: 1)
 
-        let boundaries = handler.tileBoundaries()
+        let boundaries = handler.tileBoundaries(from: [manager])
 
         #expect(boundaries.count == 2)
     }
@@ -78,14 +84,14 @@ struct GapResizeHandlerTests {
         let (left, _) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
         manager.split(left, direction: .vertical, ratio: 0.5)
 
-        let boundaries = handler.tileBoundaries()
+        let boundaries = handler.tileBoundaries(from: [manager])
 
         #expect(boundaries.count == 2)
     }
 
     @Test func noBoundariesForLeafRoot() {
-        let (handler, _, _, _, _) = makeHandler()
-        let boundaries = handler.tileBoundaries()
+        let (handler, _, _, _, manager) = makeHandler()
+        let boundaries = handler.tileBoundaries(from: [manager])
         #expect(boundaries.isEmpty)
     }
 
@@ -96,19 +102,19 @@ struct GapResizeHandlerTests {
         manager.split(manager.root, direction: .horizontal, ratio: 0.5)
 
         // Boundary should be near x=960
-        let boundary = handler.boundaryAt(point: CGPoint(x: 960, y: 540))
+        let result = handler.boundaryAt(point: CGPoint(x: 960, y: 540))
 
-        #expect(boundary != nil)
-        #expect(boundary?.axis == .horizontal)
+        #expect(result != nil)
+        #expect(result?.0.axis == .horizontal)
     }
 
     @Test func boundaryAtPointMissesWhenFarAway() {
         let (handler, _, _, _, manager) = makeHandler()
         manager.split(manager.root, direction: .horizontal, ratio: 0.5)
 
-        let boundary = handler.boundaryAt(point: CGPoint(x: 100, y: 540))
+        let result = handler.boundaryAt(point: CGPoint(x: 100, y: 540))
 
-        #expect(boundary == nil)
+        #expect(result == nil)
     }
 
     @Test func boundaryAtPointFindsVerticalBoundary() {
@@ -116,10 +122,10 @@ struct GapResizeHandlerTests {
         manager.split(manager.root, direction: .vertical, ratio: 0.5)
 
         // Boundary should be near y=540
-        let boundary = handler.boundaryAt(point: CGPoint(x: 960, y: 540))
+        let result = handler.boundaryAt(point: CGPoint(x: 960, y: 540))
 
-        #expect(boundary != nil)
-        #expect(boundary?.axis == .vertical)
+        #expect(result != nil)
+        #expect(result?.0.axis == .vertical)
     }
 
     // MARK: - Static calculateResize
@@ -316,6 +322,34 @@ struct GapResizeHandlerTests {
         handler.startMonitoring()
         handler.stopMonitoring()
         #expect(!event.isMonitoring)
+    }
+
+    // MARK: - Multi-Display
+
+    @Test func resolverRoutesToCorrectDisplayForResize() {
+        let eventProvider = MockEventProvider()
+        let cursorProvider = MockCursorProvider()
+        let manager1 = TileManager(displayID: 1, screenFrame: CGRect(x: 0, y: 0, width: 1920, height: 1080), gap: 0)
+        let manager2 = TileManager(displayID: 2, screenFrame: CGRect(x: 1920, y: 0, width: 1920, height: 1080), gap: 0)
+        let managers = [manager1, manager2]
+
+        let handler = GapResizeHandler(
+            eventProvider: eventProvider,
+            cursorProvider: cursorProvider,
+            tileManagerResolver: { point in
+                managers.first { $0.screenFrame.contains(point) }
+            }
+        )
+        let delegate = MockGapResizeDelegate()
+        handler.delegate = delegate
+
+        manager2.split(manager2.root, direction: .horizontal, ratio: 0.5)
+
+        // Boundary on display 2 should be at x=1920+960=2880
+        handler.handleMouseEvent(MouseEvent(location: CGPoint(x: 2880, y: 540), phase: .began))
+
+        #expect(handler.isResizing)
+        #expect(handler.activeBoundary?.axis == .horizontal)
     }
 
     // MARK: - Helpers

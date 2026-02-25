@@ -1,6 +1,9 @@
 import CoreGraphics
 import Foundation
 
+/// Resolves which TileManager owns a given screen point.
+public typealias TileManagerResolver = (CGPoint) -> TileManager?
+
 /// Handles shift+drag window placement onto tiles.
 ///
 /// Monitors mouse events for shift+drag gestures, highlights the target tile
@@ -8,7 +11,7 @@ import Foundation
 public final class DragDropHandler {
     private let eventProvider: EventProvider
     private let overlayProvider: OverlayProvider
-    private let tileManager: TileManager
+    private let resolveTileManager: TileManagerResolver
 
     public weak var delegate: DragDropDelegate?
 
@@ -30,11 +33,11 @@ public final class DragDropHandler {
     public init(
         eventProvider: EventProvider,
         overlayProvider: OverlayProvider,
-        tileManager: TileManager
+        tileManagerResolver: @escaping TileManagerResolver
     ) {
         self.eventProvider = eventProvider
         self.overlayProvider = overlayProvider
-        self.tileManager = tileManager
+        self.resolveTileManager = tileManagerResolver
     }
 
     /// Start monitoring mouse events for drag-drop.
@@ -95,7 +98,9 @@ public final class DragDropHandler {
     }
 
     private func endDrag(location: CGPoint) {
-        if let windowID = draggedWindowID, let tile = tileManager.tileAt(point: location) {
+        if let windowID = draggedWindowID,
+           let manager = resolveTileManager(location),
+           let tile = manager.tileAt(point: location) {
             delegate?.didDropWindow(windowID, onTile: tile.id)
         } else {
             delegate?.didCancelDrop()
@@ -120,9 +125,10 @@ public final class DragDropHandler {
     }
 
     private func updateHighlight(at location: CGPoint) {
-        if let tile = tileManager.tileAt(point: location) {
+        if let manager = resolveTileManager(location),
+           let tile = manager.tileAt(point: location) {
             highlightedTileID = tile.id
-            let frame = tileManager.frame(for: tile)
+            let frame = manager.frame(for: tile)
             overlayProvider.showHighlight(frame: frame)
         } else {
             highlightedTileID = nil

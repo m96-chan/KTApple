@@ -9,7 +9,7 @@ final class TileEditorWindow {
 
     var isVisible: Bool { panel != nil }
 
-    func show(tileManager: TileManager, layoutStore: LayoutStore, layoutKey: LayoutKey) {
+    func show(tileManager: TileManager, layoutStore: LayoutStore, layoutKey: LayoutKey, screen: NSScreen? = nil) {
         let viewModel = TileEditorViewModel(
             tileManager: tileManager,
             layoutStore: layoutStore,
@@ -20,7 +20,7 @@ final class TileEditorWindow {
             self?.close()
         }
 
-        let screenFrame = NSScreen.main?.frame ?? tileManager.screenFrame
+        let screenFrame = screen?.frame ?? NSScreen.main?.frame ?? tileManager.screenFrame
 
         let panel = NSPanel(
             contentRect: screenFrame,

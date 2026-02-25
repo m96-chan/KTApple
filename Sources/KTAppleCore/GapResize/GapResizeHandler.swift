@@ -8,7 +8,7 @@ import Foundation
 public final class GapResizeHandler {
     private let eventProvider: EventProvider
     private let cursorProvider: CursorProvider
-    private let tileManager: TileManager
+    private let resolveTileManager: TileManagerResolver
 
     /// Threshold in pixels for boundary hit-testing.
     public let boundaryThreshold: CGFloat
@@ -27,15 +27,18 @@ public final class GapResizeHandler {
     /// The original boundary position when drag started.
     private var originalPosition: CGFloat = 0
 
+    /// The tile manager active during the current resize operation.
+    private var activeManager: TileManager?
+
     public init(
         eventProvider: EventProvider,
         cursorProvider: CursorProvider,
-        tileManager: TileManager,
+        tileManagerResolver: @escaping TileManagerResolver,
         boundaryThreshold: CGFloat = 6
     ) {
         self.eventProvider = eventProvider
         self.cursorProvider = cursorProvider
-        self.tileManager = tileManager
+        self.resolveTileManager = tileManagerResolver
         self.boundaryThreshold = boundaryThreshold
     }
 
@@ -52,6 +55,7 @@ public final class GapResizeHandler {
         if isResizing {
             isResizing = false
             activeBoundary = nil
+            activeManager = nil
         }
         cursorProvider.setCursor(.arrow)
     }
@@ -63,8 +67,8 @@ public final class GapResizeHandler {
             handleHover(at: event.location)
 
         case .began:
-            if let boundary = boundaryAt(point: event.location) {
-                beginResize(boundary: boundary, location: event.location)
+            if let (boundary, manager) = boundaryAt(point: event.location) {
+                beginResize(boundary: boundary, manager: manager, location: event.location)
             }
 
         case .changed:
@@ -81,19 +85,24 @@ public final class GapResizeHandler {
 
     // MARK: - Boundary Detection
 
-    /// Compute all boundaries between sibling tiles in the tree.
-    public func tileBoundaries() -> [TileBoundary] {
+    /// Compute all boundaries across all active tile managers.
+    public func tileBoundaries(from managers: [TileManager]) -> [TileBoundary] {
         var boundaries: [TileBoundary] = []
-        collectBoundaries(tile: tileManager.root, boundaries: &boundaries)
+        for manager in managers {
+            collectBoundaries(tile: manager.root, manager: manager, boundaries: &boundaries)
+        }
         return boundaries
     }
 
     /// Find the boundary at a screen point, if any.
-    public func boundaryAt(point: CGPoint) -> TileBoundary? {
-        for boundary in tileBoundaries() {
+    public func boundaryAt(point: CGPoint) -> (TileBoundary, TileManager)? {
+        guard let manager = resolveTileManager(point) else { return nil }
+        var boundaries: [TileBoundary] = []
+        collectBoundaries(tile: manager.root, manager: manager, boundaries: &boundaries)
+        for boundary in boundaries {
             let expandedRect = boundary.rect.insetBy(dx: -boundaryThreshold, dy: -boundaryThreshold)
             if expandedRect.contains(point) {
-                return boundary
+                return (boundary, manager)
             }
         }
         return nil
@@ -132,15 +141,15 @@ public final class GapResizeHandler {
 
     // MARK: - Private
 
-    private func collectBoundaries(tile: Tile, boundaries: inout [TileBoundary]) {
+    private func collectBoundaries(tile: Tile, manager: TileManager, boundaries: inout [TileBoundary]) {
         guard !tile.isLeaf else { return }
 
         let children = tile.children
         for i in 0..<(children.count - 1) {
             let leading = children[i]
             let trailing = children[i + 1]
-            let leadingFrame = tileManager.frame(for: leading)
-            let trailingFrame = tileManager.frame(for: trailing)
+            let leadingFrame = manager.frame(for: leading)
+            let trailingFrame = manager.frame(for: trailing)
 
             let boundary: TileBoundary
             switch tile.layoutDirection {
@@ -167,13 +176,13 @@ public final class GapResizeHandler {
         }
 
         for child in children {
-            collectBoundaries(tile: child, boundaries: &boundaries)
+            collectBoundaries(tile: child, manager: manager, boundaries: &boundaries)
         }
     }
 
     private func handleHover(at location: CGPoint) {
         guard !isResizing else { return }
-        if let boundary = boundaryAt(point: location) {
+        if let (boundary, _) = boundaryAt(point: location) {
             switch boundary.axis {
             case .horizontal:
                 cursorProvider.setCursor(.resizeHorizontal)
@@ -185,9 +194,10 @@ public final class GapResizeHandler {
         }
     }
 
-    private func beginResize(boundary: TileBoundary, location: CGPoint) {
+    private func beginResize(boundary: TileBoundary, manager: TileManager, location: CGPoint) {
         isResizing = true
         activeBoundary = boundary
+        activeManager = manager
         originalPosition = boundary.position
 
         switch boundary.axis {
@@ -199,7 +209,7 @@ public final class GapResizeHandler {
     }
 
     private func updateResize(location: CGPoint) {
-        guard let boundary = activeBoundary else { return }
+        guard let boundary = activeBoundary, let manager = activeManager else { return }
 
         let currentPosition: CGFloat
         let parentSize: CGFloat
@@ -207,10 +217,10 @@ public final class GapResizeHandler {
         switch boundary.axis {
         case .horizontal:
             currentPosition = location.x
-            parentSize = tileManager.screenFrame.width
+            parentSize = manager.screenFrame.width
         case .vertical:
             currentPosition = location.y
-            parentSize = tileManager.screenFrame.height
+            parentSize = manager.screenFrame.height
         }
 
         guard parentSize > 0 else { return }
@@ -219,8 +229,8 @@ public final class GapResizeHandler {
         let normalizedDelta = pixelDelta / parentSize
 
         // Find the tiles
-        guard let leadingTile = findTile(id: boundary.leadingTileID),
-              let trailingTile = findTile(id: boundary.trailingTileID) else { return }
+        guard let leadingTile = findTile(id: boundary.leadingTileID, in: manager),
+              let trailingTile = findTile(id: boundary.trailingTileID, in: manager) else { return }
 
         let (newLeading, newTrailing) = Self.calculateResize(
             leadingProportion: leadingTile.proportion,
@@ -245,11 +255,12 @@ public final class GapResizeHandler {
 
         isResizing = false
         activeBoundary = nil
+        activeManager = nil
         handleHover(at: location)
     }
 
-    private func findTile(id: UUID) -> Tile? {
-        findTile(id: id, in: tileManager.root)
+    private func findTile(id: UUID, in manager: TileManager) -> Tile? {
+        findTile(id: id, in: manager.root)
     }
 
     private func findTile(id: UUID, in tile: Tile) -> Tile? {

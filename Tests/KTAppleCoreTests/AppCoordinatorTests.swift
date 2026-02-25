@@ -70,6 +70,35 @@ enum CoordinatorAccessibilityOp {
     case resize(UInt32, CGSize)
 }
 
+final class MockSpaceProvider: SpaceProvider {
+    var spaceIDsByDisplay: [UInt32: [Int]] = [:]
+    var activeSpaceByDisplay: [UInt32: Int] = [:]
+    var isObserving = false
+    var onSpaceChange: (() -> Void)?
+
+    func activeSpaceID(for displayID: UInt32) -> Int {
+        activeSpaceByDisplay[displayID] ?? 0
+    }
+
+    func spaceIDs(for displayID: UInt32) -> [Int] {
+        spaceIDsByDisplay[displayID] ?? []
+    }
+
+    func startObserving(callback: @escaping () -> Void) {
+        isObserving = true
+        onSpaceChange = callback
+    }
+
+    func stopObserving() {
+        isObserving = false
+        onSpaceChange = nil
+    }
+
+    func simulateSpaceChange() {
+        onSpaceChange?()
+    }
+}
+
 @Suite("AppCoordinator")
 struct AppCoordinatorTests {
     let displayFrame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
@@ -77,7 +106,8 @@ struct AppCoordinatorTests {
     private func makeCoordinator(
         trusted: Bool = true,
         displays: [DisplayInfo] = [],
-        windows: [WindowInfo] = []
+        windows: [WindowInfo] = [],
+        spaceProvider: MockSpaceProvider? = nil
     ) -> (AppCoordinator, MockAccessibilityChecker, CoordinatorMockDisplayProvider, CoordinatorMockHotkeyProvider, CoordinatorMockAccessibilityProvider, MockStorageProvider) {
         let checker = MockAccessibilityChecker()
         checker.isTrustedResult = trusted
@@ -95,7 +125,8 @@ struct AppCoordinatorTests {
             displayProvider: displayProvider,
             hotkeyProvider: hotkeyProvider,
             accessibilityAPIProvider: accessibilityProvider,
-            storageProvider: storageProvider
+            storageProvider: storageProvider,
+            spaceProvider: spaceProvider
         )
 
         return (coordinator, checker, displayProvider, hotkeyProvider, accessibilityProvider, storageProvider)
@@ -372,5 +403,142 @@ struct AppCoordinatorTests {
         #expect(!coordinator.isRunning)
         #expect(!displayProvider.isObserving)
         #expect(hotkeyProvider.unregisteredActions.count == 13)
+    }
+
+    // MARK: - Spaces Support
+
+    @Test func startWithSpaceProviderUsesSpaceAwareKeys() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let spaceProvider = MockSpaceProvider()
+        spaceProvider.spaceIDsByDisplay[1] = [100, 200, 300]
+        spaceProvider.activeSpaceByDisplay[1] = 200
+
+        let (coordinator, _, _, _, _, storage) = makeCoordinator(displays: [display], spaceProvider: spaceProvider)
+
+        // Pre-save a layout for display 1, workspace index 1 (space 200 is index 1)
+        let tempManager = TileManager(displayID: 1, screenFrame: displayFrame)
+        tempManager.split(tempManager.root, direction: .horizontal, ratio: 0.6)
+        let store = LayoutStore(provider: storage)
+        store.save(tileManager: tempManager, for: LayoutKey(displayID: 1, workspaceIndex: 1))
+
+        coordinator.start()
+
+        // The active manager should have loaded the layout for workspace index 1
+        let manager = coordinator.tileManagers[1]!
+        #expect(manager.root.children.count == 2)
+    }
+
+    @Test func spaceChangeSwapsActiveTileManager() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let spaceProvider = MockSpaceProvider()
+        spaceProvider.spaceIDsByDisplay[1] = [100, 200]
+        spaceProvider.activeSpaceByDisplay[1] = 100
+
+        let (coordinator, _, _, _, _, _) = makeCoordinator(displays: [display], spaceProvider: spaceProvider)
+        coordinator.start()
+
+        let managerBeforeSwitch = coordinator.tileManagers[1]!
+        // Split on space 100
+        managerBeforeSwitch.split(managerBeforeSwitch.root, direction: .horizontal, ratio: 0.5)
+
+        // Switch to space 200
+        spaceProvider.activeSpaceByDisplay[1] = 200
+        spaceProvider.simulateSpaceChange()
+
+        let managerAfterSwitch = coordinator.tileManagers[1]!
+        // New space should have a fresh manager (no split)
+        #expect(managerAfterSwitch !== managerBeforeSwitch)
+        #expect(managerAfterSwitch.root.isLeaf)
+    }
+
+    @Test func spaceChangeSavesCurrentLayout() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let spaceProvider = MockSpaceProvider()
+        spaceProvider.spaceIDsByDisplay[1] = [100, 200]
+        spaceProvider.activeSpaceByDisplay[1] = 100
+
+        let (coordinator, _, _, _, _, storage) = makeCoordinator(displays: [display], spaceProvider: spaceProvider)
+        coordinator.start()
+
+        let manager = coordinator.tileManagers[1]!
+        manager.split(manager.root, direction: .horizontal, ratio: 0.6)
+
+        // Switch space
+        spaceProvider.activeSpaceByDisplay[1] = 200
+        spaceProvider.simulateSpaceChange()
+
+        // Verify layout was saved for workspace index 0 (space 100)
+        let store = LayoutStore(provider: storage)
+        store.loadFromDisk()
+        let snapshot = store.layout(for: LayoutKey(displayID: 1, workspaceIndex: 0))
+        #expect(snapshot?.children.count == 2)
+    }
+
+    @Test func spaceSwitchBackRestoresCachedManager() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let spaceProvider = MockSpaceProvider()
+        spaceProvider.spaceIDsByDisplay[1] = [100, 200]
+        spaceProvider.activeSpaceByDisplay[1] = 100
+
+        let (coordinator, _, _, _, _, _) = makeCoordinator(displays: [display], spaceProvider: spaceProvider)
+        coordinator.start()
+
+        let originalManager = coordinator.tileManagers[1]!
+        originalManager.split(originalManager.root, direction: .horizontal, ratio: 0.5)
+
+        // Switch to space 200
+        spaceProvider.activeSpaceByDisplay[1] = 200
+        spaceProvider.simulateSpaceChange()
+        #expect(coordinator.tileManagers[1] !== originalManager)
+
+        // Switch back to space 100
+        spaceProvider.activeSpaceByDisplay[1] = 100
+        spaceProvider.simulateSpaceChange()
+
+        // Should get back the same cached manager instance
+        #expect(coordinator.tileManagers[1] === originalManager)
+    }
+
+    @Test func spaceChangeNotifiesCallback() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let spaceProvider = MockSpaceProvider()
+        spaceProvider.spaceIDsByDisplay[1] = [100, 200]
+        spaceProvider.activeSpaceByDisplay[1] = 100
+
+        let (coordinator, _, _, _, _, _) = makeCoordinator(displays: [display], spaceProvider: spaceProvider)
+        var spaceChangedCount = 0
+        coordinator.onSpaceChanged = { spaceChangedCount += 1 }
+        coordinator.start()
+
+        spaceProvider.activeSpaceByDisplay[1] = 200
+        spaceProvider.simulateSpaceChange()
+
+        #expect(spaceChangedCount == 1)
+    }
+
+    @Test func currentWorkspaceIndexReturnsCorrectIndex() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let spaceProvider = MockSpaceProvider()
+        spaceProvider.spaceIDsByDisplay[1] = [100, 200, 300]
+        spaceProvider.activeSpaceByDisplay[1] = 200
+
+        let (coordinator, _, _, _, _, _) = makeCoordinator(displays: [display], spaceProvider: spaceProvider)
+        coordinator.start()
+
+        #expect(coordinator.currentWorkspaceIndex(for: 1) == 1)
+    }
+
+    @Test func stopStopsSpaceObserving() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let spaceProvider = MockSpaceProvider()
+        spaceProvider.spaceIDsByDisplay[1] = [100]
+        spaceProvider.activeSpaceByDisplay[1] = 100
+
+        let (coordinator, _, _, _, _, _) = makeCoordinator(displays: [display], spaceProvider: spaceProvider)
+        coordinator.start()
+        #expect(spaceProvider.isObserving)
+
+        coordinator.stop()
+        #expect(!spaceProvider.isObserving)
     }
 }
