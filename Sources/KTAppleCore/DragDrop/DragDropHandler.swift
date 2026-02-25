@@ -21,6 +21,9 @@ public final class DragDropHandler {
     /// The window being dragged.
     public private(set) var draggedWindowID: UInt32?
 
+    /// Window ID from the last mouseDown, held until Shift is detected or mouseUp.
+    private var pendingWindowID: UInt32?
+
     public init(
         eventProvider: EventProvider,
         overlayProvider: OverlayProvider,
@@ -48,6 +51,8 @@ public final class DragDropHandler {
     public func handleMouseEvent(_ event: MouseEvent) {
         switch event.phase {
         case .began:
+            // Always remember which window was clicked, even without Shift
+            pendingWindowID = event.windowID
             if event.modifiers.contains(.shift), let windowID = event.windowID {
                 beginDrag(windowID: windowID, location: event.location)
             }
@@ -55,12 +60,16 @@ public final class DragDropHandler {
         case .changed:
             if isDragging {
                 updateDrag(location: event.location)
+            } else if event.modifiers.contains(.shift), let windowID = pendingWindowID {
+                // Shift pressed mid-drag → start drag with the window from mouseDown
+                beginDrag(windowID: windowID, location: event.location)
             }
 
         case .ended:
             if isDragging {
                 endDrag(location: event.location)
             }
+            pendingWindowID = nil
 
         case .moved:
             break
@@ -96,6 +105,7 @@ public final class DragDropHandler {
     private func clearDragState() {
         isDragging = false
         draggedWindowID = nil
+        pendingWindowID = nil
         highlightedTileID = nil
         overlayProvider.hideHighlight()
     }

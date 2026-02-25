@@ -16,12 +16,16 @@ public final class AppCoordinator: DisplayObserverDelegate {
     /// Per-display tile managers.
     public private(set) var tileManagers: [UInt32: TileManager] = [:]
 
+    /// Called when gap size changes, for persistence.
+    public var onGapSizeChanged: ((CGFloat) -> Void)?
+
     /// Gap size applied to all tile managers.
-    public var gapSize: CGFloat = 8 {
+    public var gapSize: CGFloat = 0 {
         didSet {
             for manager in tileManagers.values {
                 manager.gap = gapSize
             }
+            onGapSizeChanged?(gapSize)
         }
     }
 

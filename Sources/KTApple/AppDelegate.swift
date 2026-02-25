@@ -48,6 +48,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             coordinator?.handleAction(action)
         }
 
+        // Restore persisted gap size
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: "gapSize") != nil {
+            coordinator.gapSize = CGFloat(defaults.double(forKey: "gapSize"))
+        }
+        coordinator.onGapSizeChanged = { size in
+            defaults.set(Double(size), forKey: "gapSize")
+        }
+
         coordinator.start()
         self.coordinator = coordinator
         self.hotkeyProvider = hotkeyProvider
@@ -111,6 +120,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // If permission was granted after launch, re-start coordinator to pick up windows
         if let coordinator, !coordinator.accessibilityGranted {
             coordinator.start()
+        }
+
+        // Set up drag-drop if not yet initialized (e.g. accessibility was granted after launch)
+        if dragDropHandler == nil {
+            setupDragDrop()
         }
 
         // Toggle: if editor is already visible, close it

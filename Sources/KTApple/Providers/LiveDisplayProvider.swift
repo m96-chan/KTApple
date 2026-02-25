@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import KTAppleCore
@@ -12,7 +13,25 @@ final class LiveDisplayProvider: DisplayProvider {
         var displayIDs = [CGDirectDisplayID](repeating: 0, count: Int(displayCount))
         CGGetActiveDisplayList(displayCount, &displayIDs, &displayCount)
 
+        let screens = NSScreen.screens
+        let primaryHeight = CGDisplayBounds(CGMainDisplayID()).height
+
         return displayIDs.map { id in
+            // Find matching NSScreen to get visible frame (excludes menu bar & dock)
+            if let screen = screens.first(where: {
+                ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) == id
+            }) {
+                let cocoa = screen.visibleFrame
+                // Convert Cocoa (bottom-left origin) → Quartz (top-left origin)
+                let quartzFrame = CGRect(
+                    x: cocoa.origin.x,
+                    y: primaryHeight - cocoa.origin.y - cocoa.height,
+                    width: cocoa.width,
+                    height: cocoa.height
+                )
+                return DisplayInfo(id: id, frame: quartzFrame, name: "Display \(id)")
+            }
+            // Fallback to full bounds
             let bounds = CGDisplayBounds(id)
             return DisplayInfo(id: id, frame: bounds, name: "Display \(id)")
         }
