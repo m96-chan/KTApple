@@ -65,26 +65,50 @@ final class MockDragDropDelegate: DragDropDelegate {
 struct DragDropHandlerTests {
     let screenFrame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
 
-    private func makeHandler() -> (DragDropHandler, MockEventProvider, MockOverlayProvider, MockDragDropDelegate, TileManager) {
+    /// Tracks window positions for testing. Keys: windowID → position.
+    /// When `moved` contains a windowID, the position changes on query.
+    final class MockWindowPositionTracker {
+        var positions: [UInt32: CGPoint] = [:]
+        var moved: Set<UInt32> = []
+        private var queryCounts: [UInt32: Int] = [:]
+
+        /// Returns a provider closure. On first call returns initial position,
+        /// on subsequent calls returns shifted position if windowID is in `moved`.
+        func provider() -> (UInt32) -> CGPoint? {
+            return { [weak self] windowID in
+                guard let self, let pos = self.positions[windowID] else { return nil }
+                let count = self.queryCounts[windowID, default: 0]
+                self.queryCounts[windowID] = count + 1
+                if count > 0, self.moved.contains(windowID) {
+                    return CGPoint(x: pos.x + 50, y: pos.y + 30)
+                }
+                return pos
+            }
+        }
+    }
+
+    private func makeHandler() -> (DragDropHandler, MockEventProvider, MockOverlayProvider, MockDragDropDelegate, TileManager, MockWindowPositionTracker) {
         let eventProvider = MockEventProvider()
         let overlayProvider = MockOverlayProvider()
         let manager = TileManager(displayID: 1, screenFrame: screenFrame, gap: 0)
+        let tracker = MockWindowPositionTracker()
         let handler = DragDropHandler(
             eventProvider: eventProvider,
             overlayProvider: overlayProvider,
             tileManagerResolver: { point in
                 manager.screenFrame.contains(point) ? manager : nil
-            }
+            },
+            windowPositionProvider: tracker.provider()
         )
         let delegate = MockDragDropDelegate()
         handler.delegate = delegate
-        return (handler, eventProvider, overlayProvider, delegate, manager)
+        return (handler, eventProvider, overlayProvider, delegate, manager, tracker)
     }
 
     // MARK: - Init
 
     @Test func initState() {
-        let (handler, _, _, _, _) = makeHandler()
+        let (handler, _, _, _, _, _) = makeHandler()
         #expect(!handler.isDragging)
         #expect(handler.highlightedTileID == nil)
         #expect(handler.draggedWindowID == nil)
@@ -93,7 +117,7 @@ struct DragDropHandlerTests {
     // MARK: - Shift Detection
 
     @Test func shiftDragBeginsDrag() {
-        let (handler, _, _, _, _) = makeHandler()
+        let (handler, _, _, _, _, _) = makeHandler()
         handler.handleMouseEvent(MouseEvent(
             location: CGPoint(x: 500, y: 500),
             phase: .began,
@@ -106,7 +130,7 @@ struct DragDropHandlerTests {
     }
 
     @Test func dragWithoutShiftDoesNotBegin() {
-        let (handler, _, _, _, _) = makeHandler()
+        let (handler, _, _, _, _, _) = makeHandler()
         handler.handleMouseEvent(MouseEvent(
             location: CGPoint(x: 500, y: 500),
             phase: .began,
@@ -118,7 +142,7 @@ struct DragDropHandlerTests {
     }
 
     @Test func dragWithoutWindowIDDoesNotBegin() {
-        let (handler, _, _, _, _) = makeHandler()
+        let (handler, _, _, _, _, _) = makeHandler()
         handler.handleMouseEvent(MouseEvent(
             location: CGPoint(x: 500, y: 500),
             phase: .began,
@@ -132,7 +156,7 @@ struct DragDropHandlerTests {
     // MARK: - Highlight During Drag
 
     @Test func highlightShowsDuringDrag() {
-        let (handler, _, overlay, _, manager) = makeHandler()
+        let (handler, _, overlay, _, manager, _) = makeHandler()
         manager.split(manager.root, direction: .horizontal, ratio: 0.5)
 
         handler.handleMouseEvent(MouseEvent(
@@ -147,7 +171,7 @@ struct DragDropHandlerTests {
     }
 
     @Test func highlightUpdatesOnDragMove() {
-        let (handler, _, overlay, _, manager) = makeHandler()
+        let (handler, _, overlay, _, manager, _) = makeHandler()
         let (left, right) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
 
         handler.handleMouseEvent(MouseEvent(
@@ -169,7 +193,7 @@ struct DragDropHandlerTests {
     }
 
     @Test func highlightHidesOutsideScreen() {
-        let (handler, _, overlay, _, _) = makeHandler()
+        let (handler, _, overlay, _, _, _) = makeHandler()
 
         handler.handleMouseEvent(MouseEvent(
             location: CGPoint(x: 500, y: 500),
@@ -190,7 +214,7 @@ struct DragDropHandlerTests {
     }
 
     @Test func highlightHidesOnDragEnd() {
-        let (handler, _, overlay, _, _) = makeHandler()
+        let (handler, _, overlay, _, _, _) = makeHandler()
 
         handler.handleMouseEvent(MouseEvent(
             location: CGPoint(x: 500, y: 500),
@@ -212,7 +236,7 @@ struct DragDropHandlerTests {
     // MARK: - Drop Action
 
     @Test func dropOnTileNotifiesDelegate() {
-        let (handler, _, _, delegate, manager) = makeHandler()
+        let (handler, _, _, delegate, manager, _) = makeHandler()
         let (left, _) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
 
         handler.handleMouseEvent(MouseEvent(
@@ -233,7 +257,7 @@ struct DragDropHandlerTests {
     }
 
     @Test func dropOutsideScreenCancels() {
-        let (handler, _, _, delegate, _) = makeHandler()
+        let (handler, _, _, delegate, _, _) = makeHandler()
 
         handler.handleMouseEvent(MouseEvent(
             location: CGPoint(x: 500, y: 500),
@@ -253,7 +277,7 @@ struct DragDropHandlerTests {
     }
 
     @Test func dropClearsState() {
-        let (handler, _, _, _, _) = makeHandler()
+        let (handler, _, _, _, _, _) = makeHandler()
 
         handler.handleMouseEvent(MouseEvent(
             location: CGPoint(x: 500, y: 500),
@@ -274,7 +298,7 @@ struct DragDropHandlerTests {
     }
 
     @Test func canceledDragClearsState() {
-        let (handler, _, _, delegate, _) = makeHandler()
+        let (handler, _, _, delegate, _, _) = makeHandler()
         handler.handleMouseEvent(MouseEvent(
             location: CGPoint(x: 500, y: 500),
             phase: .began,
@@ -291,13 +315,13 @@ struct DragDropHandlerTests {
     // MARK: - Monitoring
 
     @Test func startMonitoringActivatesProvider() {
-        let (handler, event, _, _, _) = makeHandler()
+        let (handler, event, _, _, _, _) = makeHandler()
         handler.startMonitoring()
         #expect(event.isMonitoring)
     }
 
     @Test func stopMonitoringDeactivatesProvider() {
-        let (handler, event, _, _, _) = makeHandler()
+        let (handler, event, _, _, _, _) = makeHandler()
         handler.startMonitoring()
         handler.stopMonitoring()
         #expect(!event.isMonitoring)
@@ -305,8 +329,12 @@ struct DragDropHandlerTests {
 
     // MARK: - Drag From Tile (no Shift)
 
-    @Test func normalDragNotifiesUntile() {
-        let (handler, _, _, delegate, _) = makeHandler()
+    @Test func normalDragNotifiesUntileWhenWindowMoved() {
+        let (handler, _, _, delegate, _, tracker) = makeHandler()
+        // Window 42 is at (500, 300) initially and will move
+        tracker.positions[42] = CGPoint(x: 500, y: 300)
+        tracker.moved.insert(42)
+
         handler.handleMouseEvent(MouseEvent(
             location: CGPoint(x: 500, y: 500),
             phase: .began,
@@ -325,7 +353,10 @@ struct DragDropHandlerTests {
     }
 
     @Test func normalDragNotifiesOnlyOnce() {
-        let (handler, _, _, delegate, _) = makeHandler()
+        let (handler, _, _, delegate, _, tracker) = makeHandler()
+        tracker.positions[42] = CGPoint(x: 500, y: 300)
+        tracker.moved.insert(42)
+
         handler.handleMouseEvent(MouseEvent(
             location: CGPoint(x: 500, y: 500),
             phase: .began,
@@ -349,8 +380,41 @@ struct DragDropHandlerTests {
         #expect(delegate.dragFromTileCount == 1)
     }
 
+    @Test func contentDragDoesNotTriggerUntile() {
+        let (handler, _, _, delegate, _, tracker) = makeHandler()
+        // Window 42 is at (500, 300) and does NOT move (content drag)
+        tracker.positions[42] = CGPoint(x: 500, y: 300)
+        // NOT in tracker.moved → position stays the same
+
+        handler.handleMouseEvent(MouseEvent(
+            location: CGPoint(x: 500, y: 500),
+            phase: .began,
+            modifiers: [],
+            windowID: 42
+        ))
+        handler.handleMouseEvent(MouseEvent(
+            location: CGPoint(x: 510, y: 500),
+            phase: .changed,
+            modifiers: []
+        ))
+        handler.handleMouseEvent(MouseEvent(
+            location: CGPoint(x: 520, y: 510),
+            phase: .changed,
+            modifiers: []
+        ))
+        handler.handleMouseEvent(MouseEvent(
+            location: CGPoint(x: 530, y: 520),
+            phase: .ended,
+            modifiers: []
+        ))
+
+        // Content drag should NOT trigger untile
+        #expect(delegate.dragFromTileCount == 0)
+        #expect(delegate.draggedFromTileWindowID == nil)
+    }
+
     @Test func endWithoutDragIsIgnored() {
-        let (handler, _, _, delegate, _) = makeHandler()
+        let (handler, _, _, delegate, _, _) = makeHandler()
         handler.handleMouseEvent(MouseEvent(
             location: CGPoint(x: 500, y: 500),
             phase: .ended,

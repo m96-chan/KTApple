@@ -111,6 +111,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.coordinator?.tileManagers.values.first {
                     $0.screenFrame.contains(point)
                 }
+            },
+            windowPositionProvider: { windowID in
+                guard let info = CGWindowListCopyWindowInfo([.optionIncludingWindow], windowID) as? [[String: Any]],
+                      let bounds = info.first?[kCGWindowBounds as String] as? [String: Any],
+                      let x = bounds["X"] as? CGFloat,
+                      let y = bounds["Y"] as? CGFloat else { return nil }
+                return CGPoint(x: x, y: y)
             }
         )
         handler.delegate = coordinator
