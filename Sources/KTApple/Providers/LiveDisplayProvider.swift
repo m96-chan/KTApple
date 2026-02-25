@@ -2,8 +2,10 @@ import AppKit
 import CoreGraphics
 import Foundation
 import KTAppleCore
+import os.log
 
 final class LiveDisplayProvider: DisplayProvider {
+    fileprivate static let log = AppLog.logger(for: "LiveDisplayProvider")
     fileprivate var callback: (() -> Void)?
 
     func connectedDisplays() -> [DisplayInfo] {
@@ -63,5 +65,11 @@ private func displayReconfigurationCallback(
     // Skip the "begin" phase; act on the "end" phase
     if flags.contains(.beginConfigurationFlag) { return }
     let provider = Unmanaged<LiveDisplayProvider>.fromOpaque(userInfo).takeUnretainedValue()
-    provider.callback?()
+    LiveDisplayProvider.log.debug("displayReconfigurationCallback: display=\(display) flags=\(flags.rawValue)")
+    // CG display reconfiguration callback fires on an arbitrary thread.
+    // Capture the callback and dispatch to main to avoid data races.
+    nonisolated(unsafe) let callback = provider.callback
+    DispatchQueue.main.async {
+        callback?()
+    }
 }

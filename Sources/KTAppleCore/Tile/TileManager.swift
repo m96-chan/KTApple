@@ -1,11 +1,14 @@
 import CoreGraphics
 import Foundation
+import os.log
 
 /// Manages a tile tree for a single display.
 ///
 /// Handles splitting, removing, resizing tiles, and computing
 /// absolute screen-space frames from the relative tile tree.
 public final class TileManager {
+    private static let log = AppLog.logger(for: "TileManager")
+
     /// Minimum proportion a tile can have (prevents zero-size tiles).
     public static let minProportion: CGFloat = 0.05
 
@@ -23,6 +26,7 @@ public final class TileManager {
 
     /// Replace the root tile with a new tile tree.
     public func replaceRoot(_ newRoot: Tile) {
+        Self.log.debug("replaceRoot: displayID=\(self.displayID)")
         root = newRoot
     }
 
@@ -111,6 +115,7 @@ public final class TileManager {
         direction: LayoutDirection,
         ratio: CGFloat = 0.5
     ) -> (Tile, Tile) {
+        Self.log.debug("split: tileID=\(tile.id) direction=\(String(describing: direction)) ratio=\(ratio)")
         let clampedRatio = max(Self.minProportion, min(1.0 - Self.minProportion, ratio))
 
         tile.layoutDirection = direction
@@ -136,6 +141,7 @@ public final class TileManager {
     /// If removal leaves the parent with a single child, the parent collapses.
     public func remove(_ tile: Tile) {
         guard let parent = tile.parent else { return }  // Can't remove root
+        Self.log.debug("remove: tileID=\(tile.id)")
 
         parent.removeChild(tile)
 
@@ -183,6 +189,7 @@ public final class TileManager {
 
     /// Resize a tile by changing its proportion. Siblings are adjusted to compensate.
     public func resize(_ tile: Tile, newProportion: CGFloat) {
+        Self.log.debug("resize: tileID=\(tile.id) newProportion=\(newProportion)")
         guard let parent = tile.parent, let index = tile.siblingIndex else { return }
 
         let siblings = parent.children

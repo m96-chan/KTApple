@@ -1,8 +1,10 @@
 import Carbon
 import Foundation
 import KTAppleCore
+import os.log
 
 final class LiveHotkeyProvider: HotkeyProvider {
+    fileprivate static let log = AppLog.logger(for: "LiveHotkeyProvider")
     // "KTAp" as FourCharCode
     private static let hotKeySignature: UInt32 = 0x4B54_4170
 
@@ -52,6 +54,9 @@ final class LiveHotkeyProvider: HotkeyProvider {
         if status == noErr, let ref {
             hotKeyRefs[id] = ref
             actionMap[id] = binding.action
+            Self.log.debug("register: action=\(String(describing: binding.action)) id=\(id)")
+        } else {
+            Self.log.error("register failed: action=\(String(describing: binding.action)) status=\(status)")
         }
     }
 
@@ -112,7 +117,13 @@ private func hotKeyEventHandler(
     guard status == noErr else { return status }
 
     if let action = provider.actionMap[hotKeyID.id] {
-        provider.onHotkey?(action)
+        LiveHotkeyProvider.log.debug("hotkey fired: action=\(String(describing: action))")
+        // Carbon hotkey callback fires on an arbitrary thread.
+        // Capture the callback and dispatch to main to avoid data races.
+        nonisolated(unsafe) let callback = provider.onHotkey
+        DispatchQueue.main.async {
+            callback?(action)
+        }
     }
 
     return noErr

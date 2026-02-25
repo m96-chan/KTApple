@@ -169,4 +169,21 @@ struct LayoutStoreTests {
         let snapshot = store2.layout(for: key)
         #expect(snapshot?.children.count == 2)
     }
+
+    // MARK: - Bug #34: saveToDisk logs errors instead of silently swallowing
+
+    @Test func saveWithWriteErrorDoesNotCrash() {
+        let provider = MockStorageProvider()
+        let store = LayoutStore(provider: provider)
+        let manager = TileManager(displayID: 1, screenFrame: screenFrame)
+        let key = LayoutKey(displayID: 1)
+
+        provider.shouldThrowOnWrite = true
+
+        // Should not crash — error is logged, not thrown
+        store.save(tileManager: manager, for: key)
+
+        // In-memory state should still be updated even if disk write failed
+        #expect(store.layout(for: key) != nil)
+    }
 }

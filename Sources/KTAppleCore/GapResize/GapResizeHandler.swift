@@ -1,11 +1,13 @@
 import CoreGraphics
 import Foundation
+import os.log
 
 /// Handles dragging tile boundaries to resize adjacent tiles.
 ///
 /// Detects when the cursor is near a boundary, changes the cursor
 /// to a resize cursor, and processes drag gestures to resize tiles.
 public final class GapResizeHandler {
+    private static let log = AppLog.logger(for: "GapResizeHandler")
     private let eventProvider: EventProvider
     private let cursorProvider: CursorProvider
     private let resolveTileManager: TileManagerResolver
@@ -44,6 +46,7 @@ public final class GapResizeHandler {
 
     /// Start monitoring mouse events for resize.
     public func startMonitoring() {
+        Self.log.debug("startMonitoring")
         eventProvider.startMonitoring { [weak self] event in
             self?.handleMouseEvent(event)
         }
@@ -51,6 +54,7 @@ public final class GapResizeHandler {
 
     /// Stop monitoring mouse events.
     public func stopMonitoring() {
+        Self.log.debug("stopMonitoring")
         eventProvider.stopMonitoring()
         if isResizing {
             isResizing = false
@@ -195,6 +199,7 @@ public final class GapResizeHandler {
     }
 
     private func beginResize(boundary: TileBoundary, manager: TileManager, location: CGPoint) {
+        Self.log.debug("beginResize: axis=\(String(describing: boundary.axis)) position=\(boundary.position)")
         isResizing = true
         activeBoundary = boundary
         activeManager = manager
@@ -214,13 +219,23 @@ public final class GapResizeHandler {
         let currentPosition: CGFloat
         let parentSize: CGFloat
 
+        // Compute parentSize from the actual parent tile's frame, not the full screen.
+        // For nested tiles, the parent extent is smaller than the screen.
+        let parentFrame: CGRect
+        if let leadingTile = manager.root.find(id: boundary.leadingTileID),
+           let parent = leadingTile.parent {
+            parentFrame = manager.rawFrame(for: parent)
+        } else {
+            parentFrame = manager.screenFrame
+        }
+
         switch boundary.axis {
         case .horizontal:
             currentPosition = location.x
-            parentSize = manager.screenFrame.width
+            parentSize = parentFrame.width
         case .vertical:
             currentPosition = location.y
-            parentSize = manager.screenFrame.height
+            parentSize = parentFrame.height
         }
 
         guard parentSize > 0 else { return }
@@ -250,6 +265,7 @@ public final class GapResizeHandler {
         updateResize(location: location)
 
         if let boundary = activeBoundary {
+            Self.log.debug("endResize: axis=\(String(describing: boundary.axis))")
             delegate?.didResize(boundary, affectedTiles: [boundary.leadingTileID, boundary.trailingTileID])
         }
 

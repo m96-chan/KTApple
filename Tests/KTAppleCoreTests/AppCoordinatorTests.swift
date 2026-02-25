@@ -803,4 +803,40 @@ struct AppCoordinatorTests {
         coordinator.stop()
         #expect(!spaceProvider.isObserving)
     }
+
+    // MARK: - Bug #29: displayDidResize reflows windows
+
+    @Test func displayResizeReflowsWindows() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let (coordinator, _, _, _, accessibilityProvider, _) = makeCoordinator(displays: [display])
+        coordinator.start()
+
+        let manager = coordinator.tileManagers[1]!
+        let (left, _) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
+        left.addWindow(id: 10)
+
+        accessibilityProvider.operations.removeAll()
+        let newFrame = CGRect(x: 0, y: 0, width: 2560, height: 1440)
+        coordinator.displayDidResize(DisplayInfo(id: 1, frame: newFrame, name: "Main"))
+
+        // Windows should be repositioned after display resize
+        #expect(!accessibilityProvider.operations.isEmpty)
+    }
+
+    // MARK: - Bug #31: start() idempotency
+
+    @Test func startCalledTwiceDoesNotDuplicateRegistrations() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let (coordinator, checker, _, hotkeyProvider, _, _) = makeCoordinator(displays: [display])
+
+        coordinator.start()
+        let firstRegistrationCount = hotkeyProvider.registeredBindings.count
+        let firstCheckCount = checker.promptCount
+
+        coordinator.start()
+
+        // Second start should be a no-op
+        #expect(hotkeyProvider.registeredBindings.count == firstRegistrationCount)
+        #expect(checker.promptCount == firstCheckCount)
+    }
 }

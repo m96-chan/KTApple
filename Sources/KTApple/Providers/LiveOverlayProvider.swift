@@ -7,14 +7,15 @@ import KTAppleCore
 /// Shows a semi-transparent blue highlight rectangle at the target tile position.
 /// Frames are expected in Quartz screen coordinates (origin top-left).
 ///
-/// All calls arrive on the main thread (from NSEvent global monitors)
-/// so MainActor.assumeIsolated is safe here.
+/// All NSWindow operations must happen on the main thread.
+/// Dispatches to main queue to ensure thread safety regardless of caller context.
 final class LiveOverlayProvider: OverlayProvider, @unchecked Sendable {
     private var overlayWindow: NSWindow?
 
     func showHighlight(frame: CGRect) {
-        MainActor.assumeIsolated {
-            let cocoaFrame = Self.quartzToCocoa(frame)
+        let cocoaFrame = Self.quartzToCocoa(frame)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
 
             if self.overlayWindow == nil {
                 let window = NSWindow(
@@ -38,8 +39,8 @@ final class LiveOverlayProvider: OverlayProvider, @unchecked Sendable {
     }
 
     func hideHighlight() {
-        MainActor.assumeIsolated {
-            self.overlayWindow?.orderOut(nil)
+        DispatchQueue.main.async { [weak self] in
+            self?.overlayWindow?.orderOut(nil)
         }
     }
 

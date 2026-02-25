@@ -3,7 +3,7 @@ import AppKit
 import KTAppleCore
 import os.log
 
-private let log = Logger(subsystem: "com.m96chan.KTApple", category: "AppDelegate")
+private let log = AppLog.logger(for: "AppDelegate")
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -23,7 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastHotkeyFocusTime: Date?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        log.warning("applicationDidFinishLaunching AXIsProcessTrusted=\(AXIsProcessTrusted())")
+        log.info("applicationDidFinishLaunching AXIsProcessTrusted=\(AXIsProcessTrusted())")
         let accessibilityChecker = LiveAccessibilityChecker()
         let displayProvider = LiveDisplayProvider()
         let hotkeyProvider = LiveHotkeyProvider()
@@ -167,7 +167,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func openTileEditor() {
         let trusted = AXIsProcessTrusted()
-        log.warning("openTileEditor AXIsProcessTrusted=\(trusted)")
+        log.info("openTileEditor AXIsProcessTrusted=\(trusted)")
         guard trusted else {
             // Always open System Preferences when user explicitly requests editor
             NSWorkspace.shared.open(
@@ -181,6 +181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // If permission was granted after launch, re-start coordinator to pick up windows
         if let coordinator, !coordinator.accessibilityGranted {
+            coordinator.stop()
             coordinator.start()
         }
 
@@ -202,7 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         guard let coordinator, !coordinator.tileManagers.isEmpty else {
-            log.warning("openTileEditor: no coordinator or tileManager. coordinatorNil=\(self.coordinator == nil) tileManagers=\(self.coordinator?.tileManagers.count ?? -1)")
+            log.warning("openTileEditor: no coordinator or tileManagers coordinatorNil=\(self.coordinator == nil) tileManagers=\(self.coordinator?.tileManagers.count ?? -1)")
             return
         }
 
@@ -217,7 +218,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let layoutKey = LayoutKey(displayID: displayID, workspaceIndex: coordinator.currentWorkspaceIndex(for: displayID))
             let screen = NSScreen.screen(for: displayID)
 
-            log.warning("openTileEditor: showing editor for display \(tileManager.displayID)")
+            log.debug("openTileEditor: showing editor for display \(tileManager.displayID)")
             let editorWindow = TileEditorWindow()
             editorWindow.show(
                 tileManager: tileManager,
@@ -277,10 +278,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor [weak self] in
                 self?.accessibilityTimer?.invalidate()
                 self?.accessibilityTimer = nil
+                // stop() resets isRunning so start() re-checks accessibilityGranted
+                self?.coordinator?.stop()
                 self?.coordinator?.start()
                 self?.setupDragDrop()
                 self?.setupGapResize()
-                log.warning("Accessibility granted — coordinator restarted, handlers enabled")
+                log.info("Accessibility granted — coordinator restarted, handlers enabled")
             }
         }
     }

@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 final class PreferencesWindow {
     private var window: NSWindow?
+    private var state: PreferencesState?
 
     var isVisible: Bool { window?.isVisible ?? false }
 
@@ -15,9 +16,10 @@ final class PreferencesWindow {
             return
         }
 
-        let state = PreferencesState(gapSize: gapSize, onGapSizeChanged: onGapSizeChanged)
+        let newState = PreferencesState(gapSize: gapSize, onGapSizeChanged: onGapSizeChanged)
+        self.state = newState
         let view = PreferencesView(
-            gapSize: state.binding,
+            gapSize: newState.binding,
             onGapSizeChanged: onGapSizeChanged
         )
 

@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import os.log
 
 /// Central coordinator wiring all components together.
 ///
@@ -7,6 +8,7 @@ import Foundation
 /// and per-display TileManagers. Orchestrates startup, hotkey dispatch,
 /// display events, and layout persistence.
 public final class AppCoordinator: DisplayObserverDelegate {
+    private static let log = AppLog.logger(for: "AppCoordinator")
     private let accessibilityProvider: AccessibilityCheckProvider
     private let displayObserver: DisplayObserver
     private let hotkeyManager: HotkeyManager
@@ -85,12 +87,16 @@ public final class AppCoordinator: DisplayObserverDelegate {
 
     /// Start the coordinator: check accessibility, load layouts, discover windows, register hotkeys.
     public func start() {
+        guard !isRunning else { return }
+
         accessibilityGranted = accessibilityProvider.isTrusted(promptIfNeeded: false)
+        Self.log.info("start: accessibilityGranted=\(self.accessibilityGranted)")
 
         layoutStore.loadFromDisk()
 
         // Discover displays and create tile managers (always, even without accessibility)
         let displays = displayObserver.connectedDisplays()
+        Self.log.info("start: discovered \(displays.count) display(s)")
         for display in displays {
             setupDisplayManager(for: display)
         }
@@ -98,6 +104,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
         // Window operations and hotkeys require accessibility permission
         if accessibilityGranted {
             let windows = windowManager.discoverWindows()
+            Self.log.info("start: discovered \(windows.count) window(s)")
             assignWindowsToTiles(windows)
         }
 
@@ -119,10 +126,12 @@ public final class AppCoordinator: DisplayObserverDelegate {
         }
 
         isRunning = true
+        Self.log.info("start: coordinator running")
     }
 
     /// Stop the coordinator.
     public func stop() {
+        Self.log.info("stop")
         displayObserver.stopObserving()
         spaceProvider?.stopObserving()
         windowLifecycleProvider?.stopMonitoring()
@@ -136,11 +145,13 @@ public final class AppCoordinator: DisplayObserverDelegate {
     public func handleAction(_ action: HotkeyAction) {
         // Actions that don't require a focused window
         if action == .openEditor {
+            Self.log.debug("handleAction: openEditor")
             onOpenEditor?()
             return
         }
 
         guard let windowID = focusedWindowID else { return }
+        Self.log.debug("handleAction: \(String(describing: action)) windowID=\(windowID)")
 
         switch action {
         case .focusLeft:
@@ -175,10 +186,12 @@ public final class AppCoordinator: DisplayObserverDelegate {
     // MARK: - Display Events
 
     public func displayDidConnect(_ display: DisplayInfo) {
+        Self.log.info("displayDidConnect: id=\(display.id) frame=\(String(describing: display.frame))")
         setupDisplayManager(for: display)
     }
 
     public func displayDidDisconnect(displayID: UInt32) {
+        Self.log.info("displayDidDisconnect: id=\(displayID)")
         if let manager = tileManagers[displayID] {
             let key = layoutKey(for: displayID)
             layoutStore.save(tileManager: manager, for: key)
@@ -189,8 +202,10 @@ public final class AppCoordinator: DisplayObserverDelegate {
     }
 
     public func displayDidResize(_ display: DisplayInfo) {
+        Self.log.info("displayDidResize: id=\(display.id) frame=\(String(describing: display.frame))")
         if let manager = tileManagers[display.id] {
             manager.screenFrame = display.frame
+            reflowWindows(for: display.id)
         }
     }
 
@@ -199,6 +214,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
     /// Handle active space change notification.
     private func handleSpaceChanged() {
         guard let spaceProvider else { return }
+        Self.log.info("handleSpaceChanged")
 
         var changedDisplayIDs: Set<UInt32> = []
 
@@ -277,6 +293,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
         guard let manager = tileManagers[displayID] else { return false }
         guard let tile = manager.root.find(id: tileID), tile.isLeaf else { return false }
 
+        Self.log.info("splitTile: displayID=\(displayID) direction=\(String(describing: direction)) ratio=\(ratio)")
         manager.split(tile, direction: direction, ratio: ratio)
 
         let key = layoutKey(for: displayID)
@@ -332,6 +349,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
     }
 
     private func handleWindowDestroyed(_ windowID: UInt32) {
+        Self.log.debug("handleWindowDestroyed: windowID=\(windowID)")
         // Remove from any tile it's assigned to
         if let (_, tile) = findTileContaining(windowID: windowID) {
             tile.removeWindow(id: windowID)
@@ -376,6 +394,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
         guard let (manager, tile) = findTileContaining(windowID: windowID) else { return }
         guard let adjacent = manager.adjacentTile(to: tile, direction: direction) else { return }
         if let targetWindowID = adjacent.windowIDs.first {
+            Self.log.debug("focusAdjacent: windowID=\(windowID) direction=\(String(describing: direction)) → targetID=\(targetWindowID)")
             focusedWindowID = targetWindowID
             windowManager.focusWindow(id: targetWindowID)
         }
@@ -385,6 +404,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
         guard let (manager, currentTile) = findTileContaining(windowID: windowID) else { return }
         guard let adjacentTile = manager.adjacentTile(to: currentTile, direction: direction) else { return }
 
+        Self.log.debug("moveWindow: windowID=\(windowID) direction=\(String(describing: direction))")
         // Save current frame before tiling resize (only if not already saved)
         windowManager.saveOriginalFrame(id: windowID)
 
@@ -414,6 +434,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
 
     private func toggleFloating(windowID: UInt32) {
         guard let (_, tile) = findTileContaining(windowID: windowID) else { return }
+        Self.log.debug("toggleFloating: windowID=\(windowID)")
         windowManager.unassignWindow(id: windowID, from: tile)
     }
 
@@ -422,12 +443,14 @@ public final class AppCoordinator: DisplayObserverDelegate {
             // Un-maximize: restore to original tile
             guard let manager = tileManagers[state.displayID],
                   let tile = manager.root.find(id: state.tileID) else { return }
+            Self.log.debug("toggleMaximize: restore windowID=\(windowID)")
             tile.addWindow(id: windowID)
             let frame = manager.frame(for: tile)
             windowManager.setWindowFrame(id: windowID, frame: frame)
         } else {
             // Maximize: expand window to full screen frame
             guard let (manager, tile) = findTileContaining(windowID: windowID) else { return }
+            Self.log.debug("toggleMaximize: maximize windowID=\(windowID)")
             maximizedWindows[windowID] = MaximizedState(
                 displayID: manager.displayID,
                 tileID: tile.id
@@ -448,6 +471,7 @@ struct MaximizedState {
 
 extension AppCoordinator: GapResizeDelegate {
     public func didResize(_ boundary: TileBoundary, affectedTiles: [UUID]) {
+        Self.log.debug("didResize: boundary axis=\(String(describing: boundary.axis)) affectedTiles=\(affectedTiles.count)")
         // Find which display owns these tiles and auto-save + reflow windows
         for (displayID, manager) in tileManagers {
             if manager.root.find(id: boundary.leadingTileID) != nil {
@@ -472,6 +496,7 @@ extension AppCoordinator: GapResizeDelegate {
 
 extension AppCoordinator: DragDropDelegate {
     public func didDropWindow(_ windowID: UInt32, onTile tileID: UUID) {
+        Self.log.info("didDropWindow: windowID=\(windowID) onTile=\(tileID)")
         for (_, manager) in tileManagers {
             if let tile = manager.root.find(id: tileID) {
                 windowManager.assignWindow(id: windowID, to: tile, tileManager: manager)
@@ -480,9 +505,12 @@ extension AppCoordinator: DragDropDelegate {
         }
     }
 
-    public func didCancelDrop() {}
+    public func didCancelDrop() {
+        Self.log.debug("didCancelDrop")
+    }
 
     public func didDragWindowFromTile(_ windowID: UInt32) {
+        Self.log.debug("didDragWindowFromTile: windowID=\(windowID)")
         guard let (_, tile) = findTileContaining(windowID: windowID) else { return }
         windowManager.unassignWindow(id: windowID, from: tile)
     }

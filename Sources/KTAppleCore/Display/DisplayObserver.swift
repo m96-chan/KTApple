@@ -1,11 +1,13 @@
 import CoreGraphics
 import Foundation
+import os.log
 
 /// Monitors display configuration changes and notifies its delegate.
 ///
 /// Tracks connected displays and detects additions, removals, and resizes
 /// by comparing snapshots on each refresh cycle.
 public final class DisplayObserver {
+    private static let log = AppLog.logger(for: "DisplayObserver")
     private let provider: DisplayProvider
 
     /// Delegate receiving display change events.
@@ -29,6 +31,7 @@ public final class DisplayObserver {
 
     /// Start observing display reconfiguration events.
     public func startObserving() {
+        Self.log.debug("startObserving")
         provider.startObserving { [weak self] in
             self?.refresh()
         }
@@ -36,6 +39,7 @@ public final class DisplayObserver {
 
     /// Stop observing display reconfiguration events.
     public func stopObserving() {
+        Self.log.debug("stopObserving")
         provider.stopObserving()
     }
 
@@ -52,12 +56,14 @@ public final class DisplayObserver {
         // Detect new displays
         for id in currentIDs.subtracting(knownIDs) {
             if let display = currentByID[id] {
+                Self.log.info("refresh: display connected id=\(id)")
                 delegate?.displayDidConnect(display)
             }
         }
 
         // Detect removed displays
         for id in knownIDs.subtracting(currentIDs) {
+            Self.log.info("refresh: display disconnected id=\(id)")
             delegate?.displayDidDisconnect(displayID: id)
         }
 
@@ -65,6 +71,7 @@ public final class DisplayObserver {
         for id in currentIDs.intersection(knownIDs) {
             if let current = currentByID[id], let known = knownDisplays[id] {
                 if current.frame != known.frame {
+                    Self.log.info("refresh: display resized id=\(id) frame=\(String(describing: current.frame))")
                     delegate?.displayDidResize(current)
                 }
             }

@@ -2,7 +2,7 @@ import KTAppleCore
 import os.log
 import SwiftUI
 
-private let log = Logger(subsystem: "com.m96chan.KTApple", category: "TileCanvas")
+private let log = AppLog.logger(for: "TileCanvas")
 
 /// Mutable drag state held as a reference type so mutations
 /// do NOT trigger SwiftUI re-renders. Only `renderToken` is
@@ -164,7 +164,7 @@ struct CanvasEventOverlay: NSViewRepresentable {
                     case .vertical: dragState.previousPosition = canvasPoint.y
                     }
                     dragState.renderToken += 1
-                    log.warning("mouseDown: found boundary axis=\(boundary.axis == .horizontal ? "H" : "V")")
+                    log.debug("mouseDown: found boundary axis=\(boundary.axis == .horizontal ? "H" : "V")")
                     return
                 }
             }
@@ -212,18 +212,19 @@ struct CanvasEventOverlay: NSViewRepresentable {
                 }
             }
 
-            if dragState.hoveredBoundaryID != found?.id {
-                dragState.hoveredBoundaryID = found?.id
+            let newID = found?.id
+            if dragState.hoveredBoundaryID != newID {
+                dragState.hoveredBoundaryID = newID
                 dragState.renderToken += 1
-            }
 
-            if let boundary = found {
-                switch boundary.axis {
-                case .horizontal: NSCursor.resizeLeftRight.set()
-                case .vertical: NSCursor.resizeUpDown.set()
+                if let boundary = found {
+                    switch boundary.axis {
+                    case .horizontal: NSCursor.resizeLeftRight.set()
+                    case .vertical: NSCursor.resizeUpDown.set()
+                    }
+                } else {
+                    NSCursor.arrow.set()
                 }
-            } else {
-                NSCursor.arrow.set()
             }
         }
 
@@ -246,7 +247,7 @@ struct CanvasEventOverlay: NSViewRepresentable {
                 screenPos = canvasPoint.y / scaleY + screenFrame.origin.y
             }
 
-            log.warning("mouseUp: axis=\(boundary.axis == .horizontal ? "H" : "V") screenPos=\(screenPos)")
+            log.debug("mouseUp: axis=\(boundary.axis == .horizontal ? "H" : "V") screenPos=\(screenPos)")
             viewModel.resizeBoundaryAtScreenPosition(
                 leftTileID: boundary.leftTileID,
                 rightTileID: boundary.rightTileID,
@@ -275,13 +276,23 @@ final class CanvasTrackingView: NSView {
         for area in trackingAreas { removeTrackingArea(area) }
         addTrackingArea(NSTrackingArea(
             rect: bounds,
-            options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect],
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
             owner: self
         ))
     }
 
     override func mouseMoved(with event: NSEvent) {
         coordinator?.mouseMoved(at: event.locationInWindow)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        guard let dragState = coordinator?.dragState,
+              dragState.activeBoundaryID == nil else { return }
+        if dragState.hoveredBoundaryID != nil {
+            dragState.hoveredBoundaryID = nil
+            dragState.renderToken += 1
+        }
+        NSCursor.arrow.set()
     }
 
     override func mouseDown(with event: NSEvent) {

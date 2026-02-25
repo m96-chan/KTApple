@@ -1,10 +1,12 @@
 import Foundation
+import os.log
 
 /// Manages loading and saving tile layouts to disk via a StorageProvider.
 public final class LayoutStore {
     private let provider: StorageProvider
     private let filePath: String
     private var document: LayoutDocument
+    private static let log = AppLog.logger(for: "LayoutStore")
 
     public init(provider: StorageProvider, filePath: String = "layouts.json") {
         self.provider = provider
@@ -15,13 +17,18 @@ public final class LayoutStore {
     /// Load layouts from disk. Returns false if file doesn't exist or is corrupt.
     @discardableResult
     public func loadFromDisk() -> Bool {
-        guard provider.fileExists(at: filePath) else { return false }
+        guard provider.fileExists(at: filePath) else {
+            Self.log.info("No layout file at \(self.filePath), starting fresh")
+            return false
+        }
         do {
             let data = try provider.read(from: filePath)
             let decoder = JSONDecoder()
             document = try decoder.decode(LayoutDocument.self, from: data)
+            Self.log.info("Loaded layouts from \(self.filePath)")
             return true
         } catch {
+            Self.log.error("Failed to decode layouts from \(self.filePath): \(error.localizedDescription)")
             return false
         }
     }
@@ -41,9 +48,13 @@ public final class LayoutStore {
     /// Apply a stored layout to a TileManager. Returns true if successful.
     @discardableResult
     public func apply(to tileManager: TileManager, for key: LayoutKey) -> Bool {
-        guard let snapshot = document.layout(for: key) else { return false }
+        guard let snapshot = document.layout(for: key) else {
+            Self.log.debug("No stored layout for key display=\(key.displayID) workspace=\(key.workspaceIndex)")
+            return false
+        }
         let tile = snapshot.toTile()
         tileManager.replaceRoot(tile)
+        Self.log.debug("Applied layout for key display=\(key.displayID) workspace=\(key.workspaceIndex)")
         return true
     }
 
@@ -59,8 +70,9 @@ public final class LayoutStore {
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = try encoder.encode(document)
             try provider.write(data, to: filePath)
+            Self.log.debug("Saved layouts to \(self.filePath)")
         } catch {
-            // Silently fail — caller can check via loadFromDisk
+            Self.log.error("Failed to save layouts to \(self.filePath): \(error.localizedDescription)")
         }
     }
 }

@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import os.log
 
 /// Resolves which TileManager owns a given screen point.
 public typealias TileManagerResolver = (CGPoint) -> TileManager?
@@ -12,6 +13,7 @@ public typealias WindowPositionProvider = (UInt32) -> CGPoint?
 /// Monitors mouse events for shift+drag gestures, highlights the target tile
 /// via an overlay, and notifies the delegate when a window is dropped.
 public final class DragDropHandler {
+    private static let log = AppLog.logger(for: "DragDropHandler")
     private let eventProvider: EventProvider
     private let overlayProvider: OverlayProvider
     private let resolveTileManager: TileManagerResolver
@@ -51,6 +53,7 @@ public final class DragDropHandler {
 
     /// Start monitoring mouse events for drag-drop.
     public func startMonitoring() {
+        Self.log.debug("startMonitoring")
         eventProvider.startMonitoring { [weak self] event in
             self?.handleMouseEvent(event)
         }
@@ -58,6 +61,7 @@ public final class DragDropHandler {
 
     /// Stop monitoring mouse events.
     public func stopMonitoring() {
+        Self.log.debug("stopMonitoring")
         eventProvider.stopMonitoring()
         cancelDrag()
     }
@@ -106,6 +110,7 @@ public final class DragDropHandler {
     }
 
     private func beginDrag(windowID: UInt32, location: CGPoint) {
+        Self.log.debug("beginDrag: windowID=\(windowID)")
         isDragging = true
         draggedWindowID = windowID
         updateHighlight(at: location)
@@ -119,8 +124,10 @@ public final class DragDropHandler {
         if let windowID = draggedWindowID,
            let manager = resolveTileManager(location),
            let tile = manager.tileAt(point: location) {
+            Self.log.info("endDrag: drop windowID=\(windowID) onTile=\(tile.id)")
             delegate?.didDropWindow(windowID, onTile: tile.id)
         } else {
+            Self.log.debug("endDrag: cancelled (no tile at drop location)")
             delegate?.didCancelDrop()
         }
         clearDragState()

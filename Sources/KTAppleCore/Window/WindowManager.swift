@@ -1,10 +1,12 @@
 import CoreGraphics
 import Foundation
+import os.log
 
 /// Manages window operations using an AccessibilityProvider.
 ///
 /// Handles window discovery, move/resize, tile assignment, and auto-float detection.
 public final class WindowManager {
+    private static let log = AppLog.logger(for: "WindowManager")
     private let provider: AccessibilityProvider
 
     /// Currently tracked windows, keyed by window ID.
@@ -49,6 +51,7 @@ public final class WindowManager {
     /// macOS enforces size constraints when moving between displays.
     /// The correct sequence is: size → position → size.
     public func setWindowFrame(id: UInt32, frame: CGRect) {
+        Self.log.debug("setWindowFrame: id=\(id) frame=\(String(describing: frame))")
         provider.resizeWindow(id: id, to: frame.size)
         provider.moveWindow(id: id, to: frame.origin)
         provider.resizeWindow(id: id, to: frame.size)
@@ -65,6 +68,7 @@ public final class WindowManager {
 
     /// Assign a window to a tile and move/resize it to fit.
     public func assignWindow(id: UInt32, to tile: Tile, tileManager: TileManager) {
+        Self.log.info("assignWindow: id=\(id) tileID=\(tile.id)")
         // Save current frame before tiling (only if not already saved)
         if originalFrames[id] == nil {
             originalFrames[id] = provider.windowFrame(id: id)
@@ -76,6 +80,7 @@ public final class WindowManager {
 
     /// Remove a window from a tile and restore its original size (if saved).
     public func unassignWindow(id: UInt32, from tile: Tile) {
+        Self.log.info("unassignWindow: id=\(id) tileID=\(tile.id)")
         tile.removeWindow(id: id)
         if let original = originalFrames.removeValue(forKey: id) {
             resizeWindow(id: id, to: original.size)
@@ -84,6 +89,7 @@ public final class WindowManager {
 
     /// Raise and focus a window.
     public func focusWindow(id: UInt32) {
+        Self.log.debug("focusWindow: id=\(id)")
         provider.focusWindow(id: id)
     }
 

@@ -1,10 +1,12 @@
 import Foundation
+import os.log
 
 /// Manages global keyboard shortcuts.
 ///
 /// Registers/unregisters hotkeys through a `HotkeyProvider` and dispatches
 /// triggered actions via the `onHotkey` callback.
 public final class HotkeyManager {
+    private static let log = AppLog.logger(for: "HotkeyManager")
     private let provider: HotkeyProvider
     private var bindings: [HotkeyAction: HotkeyBinding] = [:]
 
@@ -22,12 +24,14 @@ public final class HotkeyManager {
 
     /// Register a hotkey binding.
     public func register(_ binding: HotkeyBinding) {
+        Self.log.debug("register: action=\(String(describing: binding.action)) keyCode=\(binding.keyCode)")
         bindings[binding.action] = binding
         provider.register(binding)
     }
 
     /// Unregister a hotkey by action.
     public func unregister(_ binding: HotkeyBinding) {
+        Self.log.debug("unregister: action=\(String(describing: binding.action))")
         bindings.removeValue(forKey: binding.action)
         provider.unregister(action: binding.action)
     }
@@ -54,6 +58,7 @@ public final class HotkeyManager {
     /// Called by the provider when a hotkey is triggered.
     public func handleHotkey(action: HotkeyAction) {
         guard bindings[action] != nil else { return }
+        Self.log.debug("handleHotkey: action=\(String(describing: action))")
         onHotkey?(action)
     }
 
@@ -93,6 +98,7 @@ public final class HotkeyManager {
             HotkeyBinding(action: .shrinkTile, keyCode: KeyCode.minus, modifiers: ctrlOpt),
         ]
 
+        Self.log.info("registerDefaults: registering \(defaults.count) bindings")
         for binding in defaults {
             register(binding)
         }
