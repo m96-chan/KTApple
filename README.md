@@ -23,7 +23,7 @@
 
 <p align="center">
   <a href="https://youtu.be/isBXA214bcE">
-    <img src="https://img.youtube.com/vi/isBXA214bcE/maxresdefault.jpg" width="600" alt="KTApple Demo" />
+    <img src="Assets/demo-thumbnail.jpg" width="600" alt="KTApple Demo" />
   </a>
   <br />
   <sub>▶ Watch the demo on YouTube</sub>
