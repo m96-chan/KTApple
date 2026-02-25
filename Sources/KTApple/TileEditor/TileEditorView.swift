@@ -10,14 +10,12 @@ struct TileEditorView: View {
             // Semi-transparent background — click to apply & close
             Color.black.opacity(0.7)
                 .onTapGesture {
-                    viewModel.selectTile(id: nil)
                     if viewModel.isDirty { viewModel.apply() }
                     onDismiss()
                 }
 
             VStack(spacing: 0) {
                 TileCanvasView(viewModel: viewModel) {
-                    viewModel.selectTile(id: nil)
                     if viewModel.isDirty { viewModel.apply() }
                     onDismiss()
                 }
@@ -50,22 +48,6 @@ struct TileEditorView: View {
             .disabled(!viewModel.canRedo)
 
             Spacer()
-
-            // Keyboard shortcuts help
-            Menu {
-                Text("H — Split Horizontal")
-                Text("V — Split Vertical")
-                Text("⌫ — Delete Tile")
-                Text("⌘Z — Undo")
-                Text("⇧⌘Z — Redo")
-                Text("⎋ — Cancel")
-                Text("⏎ — Apply & Close")
-            } label: {
-                Image(systemName: "keyboard")
-                    .foregroundColor(.white.opacity(0.7))
-            }
-            .menuStyle(.borderlessButton)
-            .frame(width: 30)
 
             Button("Cancel") {
                 viewModel.cancel()

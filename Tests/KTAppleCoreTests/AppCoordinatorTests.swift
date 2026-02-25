@@ -691,7 +691,7 @@ struct AppCoordinatorTests {
 
     // MARK: - Window Lifecycle
 
-    @Test func windowCreatedGetsAssignedToTile() {
+    @Test func windowCreatedDoesNotAutoAssignToTile() {
         let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
         let lifecycleProvider = MockWindowLifecycleProvider()
         let (coordinator, _, _, _, _, _) = makeCoordinator(displays: [display], windowLifecycleProvider: lifecycleProvider)
@@ -708,8 +708,9 @@ struct AppCoordinatorTests {
         )
         lifecycleProvider.simulateWindowCreated(newWindow)
 
+        // New windows should NOT be auto-assigned to tiles
         let hasWindow = left.windowIDs.contains(99) || right.windowIDs.contains(99)
-        #expect(hasWindow)
+        #expect(!hasWindow)
     }
 
     @Test func windowDestroyedRemovesFromTile() {

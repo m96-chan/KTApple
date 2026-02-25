@@ -51,9 +51,7 @@ struct TileCanvasView: View {
                         scaleY: scaleY,
                         screenFrameOrigin: screenFrame.origin,
                         canDelete: canDelete,
-                        isSelected: viewModel.selectedTileID == tileFrame.id,
-                        isHovered: viewModel.hoveredTileID == tileFrame.id,
-                        onSelect: { viewModel.selectTile(id: tileFrame.id) },
+                        onTap: { onBackgroundTap?() },
                         onSplitH: { viewModel.splitTile(id: tileFrame.id, direction: .horizontal) },
                         onSplitV: { viewModel.splitTile(id: tileFrame.id, direction: .vertical) },
                         onDelete: { viewModel.deleteTile(id: tileFrame.id) }
@@ -222,22 +220,6 @@ struct CanvasEventOverlay: NSViewRepresentable {
             dragState.renderToken += 1
         }
 
-        func keyDown(_ event: NSEvent) {
-            guard let id = viewModel.selectedTileID else { return }
-            switch event.charactersIgnoringModifiers {
-            case "h":
-                viewModel.splitTile(id: id, direction: .horizontal)
-            case "v":
-                viewModel.splitTile(id: id, direction: .vertical)
-            default:
-                // Delete key (backspace = 127, forward delete = 63272)
-                if event.keyCode == 51 || event.keyCode == 117 {
-                    if viewModel.tile(withID: id)?.parent != nil {
-                        viewModel.deleteTile(id: id)
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -247,10 +229,8 @@ final class CanvasTrackingView: NSView {
     weak var coordinator: CanvasEventOverlay.Coordinator?
 
     override var isFlipped: Bool { true }
-    override var acceptsFirstResponder: Bool { true }
 
     override func mouseDown(with event: NSEvent) {
-        window?.makeFirstResponder(self)
         coordinator?.mouseDown(at: event.locationInWindow)
         // If not on a boundary, let the event pass through
         if coordinator?.dragState.activeBoundaryID == nil {
@@ -272,9 +252,5 @@ final class CanvasTrackingView: NSView {
         } else {
             super.mouseUp(with: event)
         }
-    }
-
-    override func keyDown(with event: NSEvent) {
-        coordinator?.keyDown(event)
     }
 }

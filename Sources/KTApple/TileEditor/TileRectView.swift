@@ -8,22 +8,10 @@ struct TileRectView: View {
     let scaleY: CGFloat
     let screenFrameOrigin: CGPoint
     let canDelete: Bool
-    let isSelected: Bool
-    let isHovered: Bool
-    let onSelect: () -> Void
+    let onTap: () -> Void
     let onSplitH: () -> Void
     let onSplitV: () -> Void
     let onDelete: () -> Void
-
-    private var borderColor: Color {
-        if isSelected { return .accentColor }
-        if isHovered { return Color.white.opacity(0.5) }
-        return Color.white.opacity(0.2)
-    }
-
-    private var borderWidth: CGFloat {
-        isSelected ? 2 : 1
-    }
 
     var body: some View {
         let scaledFrame = CGRect(
@@ -34,15 +22,15 @@ struct TileRectView: View {
         )
 
         ZStack {
-            // Background — tapping selects the tile
+            // Background — tapping closes the editor
             RoundedRectangle(cornerRadius: 4)
-                .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.white.opacity(0.08))
+                .fill(Color.white.opacity(0.08))
                 .overlay(
                     RoundedRectangle(cornerRadius: 4)
-                        .stroke(borderColor, lineWidth: borderWidth)
+                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 4))
-                .onTapGesture { onSelect() }
+                .onTapGesture { onTap() }
 
             VStack(spacing: 6) {
                 // Window count indicator

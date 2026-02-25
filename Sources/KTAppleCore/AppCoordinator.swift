@@ -315,15 +315,8 @@ public final class AppCoordinator: DisplayObserverDelegate {
     }
 
     private func handleWindowCreated(_ window: WindowInfo) {
-        guard !WindowManager.shouldFloat(window) else { return }
-        for (_, manager) in tileManagers {
-            if manager.screenFrame.contains(window.frame.origin) {
-                if let targetTile = firstAvailableLeaf(in: manager) {
-                    windowManager.assignWindow(id: window.id, to: targetTile, tileManager: manager)
-                }
-                break
-            }
-        }
+        // New windows appear at their default position/size — no auto-assignment to tiles.
+        // Users can Shift+drag to assign windows to tiles manually.
     }
 
     private func handleWindowDestroyed(_ windowID: UInt32) {
