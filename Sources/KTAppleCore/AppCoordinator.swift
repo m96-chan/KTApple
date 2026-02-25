@@ -193,7 +193,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
     private func handleSpaceChanged() {
         guard let spaceProvider else { return }
 
-        var didChange = false
+        var changedDisplayIDs: Set<UInt32> = []
 
         for (displayID, manager) in tileManagers {
             let newSpaceID = spaceProvider.activeSpaceID(for: displayID)
@@ -220,14 +220,14 @@ public final class AppCoordinator: DisplayObserverDelegate {
 
             tileManagers[displayID] = newManager
             activeSpaceIDs[displayID] = newSpaceID
-            didChange = true
+            changedDisplayIDs.insert(displayID)
         }
 
-        if didChange {
-            // Re-discover and assign windows for new space
+        if !changedDisplayIDs.isEmpty {
+            // Re-discover and assign windows only for changed displays
             if accessibilityGranted {
-                // Clear window assignments on new managers
-                for (_, manager) in tileManagers {
+                for displayID in changedDisplayIDs {
+                    guard let manager = tileManagers[displayID] else { continue }
                     for leaf in manager.leafTiles() {
                         for wid in leaf.windowIDs {
                             leaf.removeWindow(id: wid)
@@ -257,7 +257,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
     @discardableResult
     public func splitTile(displayID: UInt32, tileID: UUID, direction: LayoutDirection, ratio: CGFloat = 0.5) -> Bool {
         guard let manager = tileManagers[displayID] else { return false }
-        guard let tile = findTile(id: tileID, in: manager.root), tile.isLeaf else { return false }
+        guard let tile = manager.root.find(id: tileID), tile.isLeaf else { return false }
 
         manager.split(tile, direction: direction, ratio: ratio)
 
@@ -354,25 +354,9 @@ public final class AppCoordinator: DisplayObserverDelegate {
 
     private func findTileContaining(windowID: UInt32) -> (TileManager, Tile)? {
         for (_, manager) in tileManagers {
-            if let tile = findTileWithWindow(windowID: windowID, in: manager.root) {
+            if let tile = manager.root.findTile(containingWindow: windowID) {
                 return (manager, tile)
             }
-        }
-        return nil
-    }
-
-    private func findTileWithWindow(windowID: UInt32, in tile: Tile) -> Tile? {
-        if tile.windowIDs.contains(windowID) { return tile }
-        for child in tile.children {
-            if let found = findTileWithWindow(windowID: windowID, in: child) { return found }
-        }
-        return nil
-    }
-
-    private func findTile(id: UUID, in tile: Tile) -> Tile? {
-        if tile.id == id { return tile }
-        for child in tile.children {
-            if let found = findTile(id: id, in: child) { return found }
         }
         return nil
     }
@@ -414,7 +398,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
         if let state = maximizedWindows.removeValue(forKey: windowID) {
             // Un-maximize: restore to original tile
             guard let manager = tileManagers[state.displayID],
-                  let tile = findTile(id: state.tileID, in: manager.root) else { return }
+                  let tile = manager.root.find(id: state.tileID) else { return }
             tile.addWindow(id: windowID)
             let frame = manager.frame(for: tile)
             windowManager.setWindowFrame(id: windowID, frame: frame)
@@ -443,10 +427,10 @@ extension AppCoordinator: GapResizeDelegate {
     public func didResize(_ boundary: TileBoundary, affectedTiles: [UUID]) {
         // Find which display owns these tiles and auto-save + reflow windows
         for (displayID, manager) in tileManagers {
-            if findTile(id: boundary.leadingTileID, in: manager.root) != nil {
+            if manager.root.find(id: boundary.leadingTileID) != nil {
                 // Reflow windows in affected tiles
                 for tileID in affectedTiles {
-                    if let tile = findTile(id: tileID, in: manager.root) {
+                    if let tile = manager.root.find(id: tileID) {
                         for windowID in tile.windowIDs {
                             let frame = manager.frame(for: tile)
                             windowManager.setWindowFrame(id: windowID, frame: frame)
@@ -466,7 +450,7 @@ extension AppCoordinator: GapResizeDelegate {
 extension AppCoordinator: DragDropDelegate {
     public func didDropWindow(_ windowID: UInt32, onTile tileID: UUID) {
         for (_, manager) in tileManagers {
-            if let tile = findTile(id: tileID, in: manager.root) {
+            if let tile = manager.root.find(id: tileID) {
                 windowManager.assignWindow(id: windowID, to: tile, tileManager: manager)
                 break
             }

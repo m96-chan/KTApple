@@ -5,8 +5,6 @@ import SwiftUI
 struct TileEditorView: View {
     @ObservedObject var viewModel: TileEditorViewModel
     let onDismiss: () -> Void
-    @State private var showDeleteConfirmation = false
-
     var body: some View {
         ZStack {
             // Semi-transparent background — click to apply & close
@@ -32,22 +30,6 @@ struct TileEditorView: View {
             viewModel.cancel()
             onDismiss()
         }
-        .alert("Delete Tile?", isPresented: $showDeleteConfirmation) {
-            Button("Delete", role: .destructive) {
-                if let id = viewModel.selectedTileID {
-                    viewModel.deleteTile(id: id)
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This will remove the selected tile and merge it with its sibling.")
-        }
-    }
-
-    private func deleteSelectedTile() {
-        guard let id = viewModel.selectedTileID,
-              viewModel.tile(withID: id)?.parent != nil else { return }
-        showDeleteConfirmation = true
     }
 
     private var toolbar: some View {

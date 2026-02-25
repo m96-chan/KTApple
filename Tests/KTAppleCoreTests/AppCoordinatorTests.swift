@@ -584,6 +584,50 @@ struct AppCoordinatorTests {
         #expect(spaceChangedCount == 1)
     }
 
+    @Test func spaceChangeOnlyAffectsChangedDisplay() {
+        let display1 = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let display2 = DisplayInfo(id: 2, frame: CGRect(x: 1920, y: 0, width: 1920, height: 1080), name: "Secondary")
+        let spaceProvider = MockSpaceProvider()
+        spaceProvider.spaceIDsByDisplay[1] = [100, 200]
+        spaceProvider.spaceIDsByDisplay[2] = [300, 400]
+        spaceProvider.activeSpaceByDisplay[1] = 100
+        spaceProvider.activeSpaceByDisplay[2] = 300
+
+        let window1 = WindowInfo(
+            id: 10, pid: 1, title: "Win1",
+            frame: CGRect(x: 100, y: 100, width: 800, height: 600),
+            isResizable: true, isMinimized: false, isFullscreen: false,
+            subrole: .standardWindow
+        )
+        let window2 = WindowInfo(
+            id: 20, pid: 2, title: "Win2",
+            frame: CGRect(x: 2020, y: 100, width: 800, height: 600),
+            isResizable: true, isMinimized: false, isFullscreen: false,
+            subrole: .standardWindow
+        )
+
+        let (coordinator, _, _, _, _, _) = makeCoordinator(
+            displays: [display1, display2],
+            windows: [window1, window2],
+            spaceProvider: spaceProvider
+        )
+        coordinator.start()
+
+        // Verify both displays have windows assigned
+        let manager2 = coordinator.tileManagers[2]!
+        let display2HasWindow = manager2.root.leafTiles().contains { $0.windowIDs.contains(20) }
+        #expect(display2HasWindow)
+
+        // Change space on display 1 only
+        spaceProvider.activeSpaceByDisplay[1] = 200
+        spaceProvider.simulateSpaceChange()
+
+        // Display 2 windows should NOT be cleared — they weren't affected
+        let manager2After = coordinator.tileManagers[2]!
+        let display2StillHasWindow = manager2After.root.leafTiles().contains { $0.windowIDs.contains(20) }
+        #expect(display2StillHasWindow)
+    }
+
     @Test func currentWorkspaceIndexReturnsCorrectIndex() {
         let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
         let spaceProvider = MockSpaceProvider()

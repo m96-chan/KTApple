@@ -101,6 +101,24 @@ public final class Tile: Identifiable {
 
     // MARK: - Traversal
 
+    /// Find a descendant (or self) by ID.
+    public func find(id: UUID) -> Tile? {
+        if self.id == id { return self }
+        for child in children {
+            if let found = child.find(id: id) { return found }
+        }
+        return nil
+    }
+
+    /// Find the leaf tile containing a given window ID.
+    public func findTile(containingWindow windowID: UInt32) -> Tile? {
+        if windowIDs.contains(windowID) { return self }
+        for child in children {
+            if let found = child.findTile(containingWindow: windowID) { return found }
+        }
+        return nil
+    }
+
     /// All descendant tiles (not including self).
     public func descendants() -> [Tile] {
         var result: [Tile] = []

@@ -229,8 +229,8 @@ public final class GapResizeHandler {
         let normalizedDelta = pixelDelta / parentSize
 
         // Find the tiles
-        guard let leadingTile = findTile(id: boundary.leadingTileID, in: manager),
-              let trailingTile = findTile(id: boundary.trailingTileID, in: manager) else { return }
+        guard let leadingTile = manager.root.find(id: boundary.leadingTileID),
+              let trailingTile = manager.root.find(id: boundary.trailingTileID) else { return }
 
         let (newLeading, newTrailing) = Self.calculateResize(
             leadingProportion: leadingTile.proportion,
@@ -259,15 +259,4 @@ public final class GapResizeHandler {
         handleHover(at: location)
     }
 
-    private func findTile(id: UUID, in manager: TileManager) -> Tile? {
-        findTile(id: id, in: manager.root)
-    }
-
-    private func findTile(id: UUID, in tile: Tile) -> Tile? {
-        if tile.id == id { return tile }
-        for child in tile.children {
-            if let found = findTile(id: id, in: child) { return found }
-        }
-        return nil
-    }
 }

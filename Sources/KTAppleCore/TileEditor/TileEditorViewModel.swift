@@ -118,7 +118,7 @@ public final class TileEditorViewModel: ObservableObject {
     /// Split a leaf tile into two children.
     @discardableResult
     public func splitTile(id: UUID, direction: LayoutDirection, ratio: CGFloat = 0.5) -> Bool {
-        guard let tile = findTile(id: id, in: workingManager.root), tile.isLeaf else { return false }
+        guard let tile = workingManager.root.find(id: id), tile.isLeaf else { return false }
         saveSnapshot()
         workingManager.split(tile, direction: direction, ratio: ratio)
         isDirty = true
@@ -128,7 +128,7 @@ public final class TileEditorViewModel: ObservableObject {
     /// Delete a leaf tile.
     @discardableResult
     public func deleteTile(id: UUID) -> Bool {
-        guard let tile = findTile(id: id, in: workingManager.root) else { return false }
+        guard let tile = workingManager.root.find(id: id) else { return false }
         guard tile.parent != nil else { return false }  // Can't delete root
         guard tile.isLeaf else { return false }
         saveSnapshot()
@@ -142,7 +142,7 @@ public final class TileEditorViewModel: ObservableObject {
     /// Resize a tile to a new proportion.
     @discardableResult
     public func resizeTile(id: UUID, newProportion: CGFloat) -> Bool {
-        guard let tile = findTile(id: id, in: workingManager.root) else { return false }
+        guard let tile = workingManager.root.find(id: id) else { return false }
         guard tile.parent != nil else { return false }
         saveSnapshot()
         workingManager.resize(tile, newProportion: newProportion)
@@ -153,8 +153,8 @@ public final class TileEditorViewModel: ObservableObject {
     /// Resize by dragging a boundary between two adjacent tiles.
     @discardableResult
     public func resizeBoundary(leftTileID: UUID, rightTileID: UUID, positionFraction: CGFloat) -> Bool {
-        guard let leftTile = findTile(id: leftTileID, in: workingManager.root),
-              let rightTile = findTile(id: rightTileID, in: workingManager.root),
+        guard let leftTile = workingManager.root.find(id: leftTileID),
+              let rightTile = workingManager.root.find(id: rightTileID),
               let parent = leftTile.parent,
               rightTile.parent === parent else { return false }
 
@@ -172,8 +172,8 @@ public final class TileEditorViewModel: ObservableObject {
     /// Resize by dragging a boundary to an absolute screen position.
     @discardableResult
     public func resizeBoundaryAtScreenPosition(leftTileID: UUID, rightTileID: UUID, axis: LayoutDirection, screenPosition: CGFloat) -> Bool {
-        guard let leftTile = findTile(id: leftTileID, in: workingManager.root),
-              let rightTile = findTile(id: rightTileID, in: workingManager.root),
+        guard let leftTile = workingManager.root.find(id: leftTileID),
+              let rightTile = workingManager.root.find(id: rightTileID),
               let parent = leftTile.parent,
               rightTile.parent === parent else { return false }
 
@@ -276,18 +276,10 @@ public final class TileEditorViewModel: ObservableObject {
 
     /// Find a tile by ID in the working tree.
     public func tile(withID id: UUID) -> Tile? {
-        findTile(id: id, in: workingManager.root)
+        workingManager.root.find(id: id)
     }
 
     // MARK: - Private
-
-    private func findTile(id: UUID, in tile: Tile) -> Tile? {
-        if tile.id == id { return tile }
-        for child in tile.children {
-            if let found = findTile(id: id, in: child) { return found }
-        }
-        return nil
-    }
 
     private func collectBoundaries(tile: Tile, result: inout [EditorTileBoundary]) {
         guard !tile.isLeaf else { return }

@@ -171,6 +171,51 @@ struct TileTests {
         #expect(descendants.count == 2)
     }
 
+    // MARK: - Find by ID
+
+    @Test func findByIDReturnsMatchingTile() {
+        let root = Tile(layoutDirection: .horizontal)
+        let left = Tile(proportion: 0.5)
+        let right = Tile(proportion: 0.5, layoutDirection: .vertical)
+        let topRight = Tile(proportion: 0.5)
+        let bottomRight = Tile(proportion: 0.5)
+        root.addChild(left)
+        root.addChild(right)
+        right.addChild(topRight)
+        right.addChild(bottomRight)
+
+        #expect(root.find(id: root.id) === root)
+        #expect(root.find(id: left.id) === left)
+        #expect(root.find(id: topRight.id) === topRight)
+        #expect(root.find(id: bottomRight.id) === bottomRight)
+    }
+
+    @Test func findByIDReturnsNilForUnknown() {
+        let root = Tile()
+        #expect(root.find(id: UUID()) == nil)
+    }
+
+    // MARK: - Find by Window ID
+
+    @Test func findByWindowIDReturnsCorrectLeaf() {
+        let root = Tile(layoutDirection: .horizontal)
+        let left = Tile(proportion: 0.5)
+        let right = Tile(proportion: 0.5)
+        root.addChild(left)
+        root.addChild(right)
+        left.addWindow(id: 42)
+        right.addWindow(id: 99)
+
+        #expect(root.findTile(containingWindow: 42) === left)
+        #expect(root.findTile(containingWindow: 99) === right)
+    }
+
+    @Test func findByWindowIDReturnsNilWhenNotFound() {
+        let root = Tile()
+        root.addWindow(id: 1)
+        #expect(root.findTile(containingWindow: 999) == nil)
+    }
+
     // MARK: - Depth
 
     @Test func depth() {
