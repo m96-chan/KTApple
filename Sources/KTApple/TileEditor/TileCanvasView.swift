@@ -70,6 +70,18 @@ struct TileCanvasView: View {
                         dragOffset: dragState.activeBoundaryID == boundary.id ? dragState.dragOffset : 0
                     )
                 }
+
+                // Pixel dimension label shown during boundary drag
+                if let activeBoundary = dragState.activeBoundary {
+                    DimensionOverlay(
+                        boundary: activeBoundary,
+                        dragOffset: dragState.dragOffset,
+                        workingManager: viewModel.workingManager,
+                        scaleX: scaleX,
+                        scaleY: scaleY,
+                        screenFrameOrigin: screenFrame.origin
+                    )
+                }
             }
             .coordinateSpace(name: "tileCanvas")
             .background(
@@ -316,6 +328,70 @@ final class CanvasTrackingView: NSView {
             coordinator?.mouseUp(at: event.locationInWindow)
         } else {
             super.mouseUp(with: event)
+        }
+    }
+}
+
+// MARK: - Dimension Overlay
+
+/// Displays pixel dimensions of both adjacent tiles while a boundary is being dragged.
+///
+/// Uses raw (pre-gap) tile frames and adjusts by the current dragOffset to give
+/// real-time feedback on how the resize will affect each tile slot.
+private struct DimensionOverlay: View {
+    let boundary: EditorTileBoundary
+    let dragOffset: CGFloat
+    let workingManager: TileManager
+    let scaleX: CGFloat
+    let scaleY: CGFloat
+    let screenFrameOrigin: CGPoint
+
+    private struct Info {
+        let text: String
+        let x: CGFloat
+        let y: CGFloat
+    }
+
+    private var info: Info? {
+        guard let leading = workingManager.root.find(id: boundary.leftTileID),
+              let trailing = workingManager.root.find(id: boundary.rightTileID) else { return nil }
+
+        let lRaw = workingManager.rawFrame(for: leading)
+        let tRaw = workingManager.rawFrame(for: trailing)
+
+        let canvasX = (boundary.rect.midX - screenFrameOrigin.x) * scaleX
+        let canvasY = (boundary.rect.midY - screenFrameOrigin.y) * scaleY
+
+        switch boundary.axis {
+        case .horizontal:
+            let screenDelta = dragOffset / scaleX
+            let lw = Int(max(0, lRaw.width + screenDelta).rounded())
+            let tw = Int(max(0, tRaw.width - screenDelta).rounded())
+            let h  = Int(lRaw.height.rounded())
+            return Info(text: "\(lw) × \(h)  |  \(tw) × \(h)",
+                        x: canvasX + dragOffset,
+                        y: canvasY)
+        case .vertical:
+            let screenDelta = dragOffset / scaleY
+            let lh = Int(max(0, lRaw.height + screenDelta).rounded())
+            let th = Int(max(0, tRaw.height - screenDelta).rounded())
+            let w  = Int(lRaw.width.rounded())
+            return Info(text: "\(w) × \(lh)  |  \(w) × \(th)",
+                        x: canvasX,
+                        y: canvasY + dragOffset)
+        }
+    }
+
+    var body: some View {
+        if let i = info {
+            Text(i.text)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundColor(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(RoundedRectangle(cornerRadius: 4).fill(Color.black.opacity(0.75)))
+                .position(x: i.x, y: i.y)
+                .allowsHitTesting(false)
         }
     }
 }

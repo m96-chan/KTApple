@@ -6,6 +6,8 @@ import SwiftUI
 @MainActor
 final class TileEditorWindow {
     private var panel: NSPanel?
+    private var viewModel: TileEditorViewModel?
+    private var keyMonitor: Any?
 
     var isVisible: Bool { panel != nil }
 
@@ -16,6 +18,7 @@ final class TileEditorWindow {
             layoutKey: layoutKey
         )
         viewModel.onApply = onApply
+        self.viewModel = viewModel
 
         let contentView = TileEditorView(viewModel: viewModel) { [weak self] in
             self?.close()
@@ -40,10 +43,38 @@ final class TileEditorWindow {
         panel.makeKeyAndOrderFront(nil)
 
         self.panel = panel
+        installKeyMonitor(viewModel: viewModel)
     }
 
     func close() {
+        if let monitor = keyMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyMonitor = nil
+        }
         panel?.close()
         panel = nil
+        viewModel = nil
+    }
+
+    // MARK: - Private
+
+    /// Install a local key monitor to handle ⌘Z / ⌘⇧Z while the panel is open.
+    ///
+    /// SwiftUI .keyboardShortcut does not fire reliably inside NSPanel + NSHostingView
+    /// because the panel uses .nonactivatingPanel and SwiftUI's shortcut routing depends
+    /// on the standard macOS menu/responder chain being active.
+    private func installKeyMonitor(viewModel: TileEditorViewModel) {
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak viewModel] event in
+            guard let viewModel else { return event }
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard event.charactersIgnoringModifiers?.lowercased() == "z",
+                  flags.contains(.command) else { return event }
+            if flags.contains(.shift) {
+                viewModel.redo()
+            } else {
+                viewModel.undo()
+            }
+            return nil  // consume the event
+        }
     }
 }
