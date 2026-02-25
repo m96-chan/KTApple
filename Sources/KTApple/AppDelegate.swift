@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var coordinator: AppCoordinator?
     private var hotkeyProvider: LiveHotkeyProvider?
     private var tileEditorWindows: [UInt32: TileEditorWindow] = [:]
+    private var preferencesWindow: PreferencesWindow?
     private var dragDropHandler: DragDropHandler?
     private var gapResizeHandler: GapResizeHandler?
     private var mouseDownMonitor: Any?
@@ -34,6 +35,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
         let layoutPath = supportDir.appendingPathComponent("layouts.json").path
 
+        let windowLifecycleProvider = LiveWindowLifecycleProvider(accessibilityProvider: accessibilityProvider)
+
         let coordinator = AppCoordinator(
             accessibilityProvider: accessibilityChecker,
             displayProvider: displayProvider,
@@ -41,7 +44,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             accessibilityAPIProvider: accessibilityProvider,
             storageProvider: storageProvider,
             layoutFilePath: layoutPath,
-            spaceProvider: spaceProvider
+            spaceProvider: spaceProvider,
+            windowLifecycleProvider: windowLifecycleProvider
         )
 
         coordinator.onOpenEditor = { [weak self] in
@@ -67,6 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.hotkeyProvider = hotkeyProvider
 
         setupDragDrop()
+        setupGapResize()
 
         // If accessibility not granted, open System Settings and poll until granted
         if !coordinator.accessibilityGranted {
@@ -80,9 +85,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Track focused window (on app activation AND mouseDown)
         startFocusTracking()
 
-        statusBarController = StatusBarController(onOpenEditor: { [weak self] in
-            self?.openTileEditor()
-        })
+        statusBarController = StatusBarController(
+            onOpenEditor: { [weak self] in
+                self?.openTileEditor()
+            },
+            onOpenPreferences: { [weak self] in
+                self?.openPreferences()
+            }
+        )
     }
 
     // MARK: - Drag & Drop
@@ -106,6 +116,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         handler.delegate = coordinator
         handler.startMonitoring()
         self.dragDropHandler = handler
+    }
+
+    // MARK: - Gap Resize
+
+    private func setupGapResize() {
+        guard let coordinator,
+              coordinator.accessibilityGranted,
+              !coordinator.tileManagers.isEmpty else { return }
+
+        let eventProvider = LiveEventProvider()
+        let cursorProvider = LiveCursorProvider()
+        let handler = GapResizeHandler(
+            eventProvider: eventProvider,
+            cursorProvider: cursorProvider,
+            tileManagerResolver: { [weak self] point in
+                self?.coordinator?.tileManagers.values.first {
+                    $0.screenFrame.contains(point)
+                }
+            }
+        )
+        handler.delegate = coordinator
+        handler.startMonitoring()
+        self.gapResizeHandler = handler
     }
 
     // MARK: - Tile Editor
@@ -133,9 +166,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             coordinator.start()
         }
 
-        // Set up drag-drop if not yet initialized (e.g. accessibility was granted after launch)
+        // Set up handlers if not yet initialized (e.g. accessibility was granted after launch)
         if dragDropHandler == nil {
             setupDragDrop()
+        }
+        if gapResizeHandler == nil {
+            setupGapResize()
         }
 
         // Toggle: if any editor is visible, close all
@@ -175,6 +211,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - Preferences
+
+    private func openPreferences() {
+        if preferencesWindow == nil {
+            preferencesWindow = PreferencesWindow()
+        }
+        preferencesWindow?.show(
+            gapSize: Double(coordinator?.gapSize ?? 8),
+            onGapSizeChanged: { [weak self] size in
+                self?.coordinator?.setGapSize(CGFloat(size))
+            }
+        )
+    }
+
     // MARK: - Focus Tracking
 
     private func startFocusTracking() {
@@ -208,7 +258,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.accessibilityTimer = nil
                 self?.coordinator?.start()
                 self?.setupDragDrop()
-                log.warning("Accessibility granted — coordinator restarted, drag-drop enabled")
+                self?.setupGapResize()
+                log.warning("Accessibility granted — coordinator restarted, handlers enabled")
             }
         }
     }

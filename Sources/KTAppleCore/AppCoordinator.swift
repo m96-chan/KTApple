@@ -13,6 +13,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
     private let windowManager: WindowManager
     public let layoutStore: LayoutStore
     private let spaceProvider: SpaceProvider?
+    private let windowLifecycleProvider: WindowLifecycleProvider?
 
     /// Per-display tile managers (active set — one per display, current Space).
     public private(set) var tileManagers: [UInt32: TileManager] = [:]
@@ -23,6 +24,9 @@ public final class AppCoordinator: DisplayObserverDelegate {
 
     /// Tracks the active space ID per display to detect changes.
     private var activeSpaceIDs: [UInt32: Int] = [:]
+
+    /// Tracks maximized windows: windowID → (displayID, tileID, originalProportion).
+    private var maximizedWindows: [UInt32: MaximizedState] = [:]
 
     /// Called when gap size changes, for persistence.
     public var onGapSizeChanged: ((CGFloat) -> Void)?
@@ -59,7 +63,8 @@ public final class AppCoordinator: DisplayObserverDelegate {
         accessibilityAPIProvider: AccessibilityProvider,
         storageProvider: StorageProvider,
         layoutFilePath: String = "layouts.json",
-        spaceProvider: SpaceProvider? = nil
+        spaceProvider: SpaceProvider? = nil,
+        windowLifecycleProvider: WindowLifecycleProvider? = nil
     ) {
         self.accessibilityProvider = accessibilityProvider
         self.displayObserver = DisplayObserver(provider: displayProvider)
@@ -67,6 +72,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
         self.windowManager = WindowManager(provider: accessibilityAPIProvider)
         self.layoutStore = LayoutStore(provider: storageProvider, filePath: layoutFilePath)
         self.spaceProvider = spaceProvider
+        self.windowLifecycleProvider = windowLifecycleProvider
 
         displayObserver.delegate = self
         hotkeyManager.onHotkey = { [weak self] action in
@@ -100,6 +106,17 @@ public final class AppCoordinator: DisplayObserverDelegate {
             self?.handleSpaceChanged()
         }
 
+        if accessibilityGranted {
+            windowLifecycleProvider?.startMonitoring(
+                onWindowCreated: { [weak self] window in
+                    self?.handleWindowCreated(window)
+                },
+                onWindowDestroyed: { [weak self] windowID in
+                    self?.handleWindowDestroyed(windowID)
+                }
+            )
+        }
+
         isRunning = true
     }
 
@@ -107,6 +124,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
     public func stop() {
         displayObserver.stopObserving()
         spaceProvider?.stopObserving()
+        windowLifecycleProvider?.stopMonitoring()
         hotkeyManager.unregisterAll()
         isRunning = false
     }
@@ -143,7 +161,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
         case .openEditor:
             onOpenEditor?()
         case .toggleMaximize:
-            break
+            toggleMaximize(windowID: windowID)
         }
     }
 
@@ -290,6 +308,27 @@ public final class AppCoordinator: DisplayObserverDelegate {
         return ids.firstIndex(of: spaceID) ?? 0
     }
 
+    private func handleWindowCreated(_ window: WindowInfo) {
+        guard !WindowManager.shouldFloat(window) else { return }
+        for (_, manager) in tileManagers {
+            if manager.screenFrame.contains(window.frame.origin) {
+                if let targetTile = firstAvailableLeaf(in: manager) {
+                    windowManager.assignWindow(id: window.id, to: targetTile, tileManager: manager)
+                }
+                break
+            }
+        }
+    }
+
+    private func handleWindowDestroyed(_ windowID: UInt32) {
+        // Remove from any tile it's assigned to
+        if let (_, tile) = findTileContaining(windowID: windowID) {
+            tile.removeWindow(id: windowID)
+        }
+        // Clean up maximized state if applicable
+        maximizedWindows.removeValue(forKey: windowID)
+    }
+
     private func assignWindowsToTiles(_ windows: [WindowInfo]) {
         for window in windows {
             guard !WindowManager.shouldFloat(window) else { continue }
@@ -369,6 +408,56 @@ public final class AppCoordinator: DisplayObserverDelegate {
     private func toggleFloating(windowID: UInt32) {
         guard let (_, tile) = findTileContaining(windowID: windowID) else { return }
         windowManager.unassignWindow(id: windowID, from: tile)
+    }
+
+    private func toggleMaximize(windowID: UInt32) {
+        if let state = maximizedWindows.removeValue(forKey: windowID) {
+            // Un-maximize: restore to original tile
+            guard let manager = tileManagers[state.displayID],
+                  let tile = findTile(id: state.tileID, in: manager.root) else { return }
+            tile.addWindow(id: windowID)
+            let frame = manager.frame(for: tile)
+            windowManager.setWindowFrame(id: windowID, frame: frame)
+        } else {
+            // Maximize: expand window to full screen frame
+            guard let (manager, tile) = findTileContaining(windowID: windowID) else { return }
+            maximizedWindows[windowID] = MaximizedState(
+                displayID: manager.displayID,
+                tileID: tile.id
+            )
+            tile.removeWindow(id: windowID)
+            windowManager.setWindowFrame(id: windowID, frame: manager.screenFrame)
+        }
+    }
+}
+
+/// State saved when a window is maximized, for restoration on un-maximize.
+struct MaximizedState {
+    let displayID: UInt32
+    let tileID: UUID
+}
+
+// MARK: - GapResizeDelegate
+
+extension AppCoordinator: GapResizeDelegate {
+    public func didResize(_ boundary: TileBoundary, affectedTiles: [UUID]) {
+        // Find which display owns these tiles and auto-save + reflow windows
+        for (displayID, manager) in tileManagers {
+            if findTile(id: boundary.leadingTileID, in: manager.root) != nil {
+                // Reflow windows in affected tiles
+                for tileID in affectedTiles {
+                    if let tile = findTile(id: tileID, in: manager.root) {
+                        for windowID in tile.windowIDs {
+                            let frame = manager.frame(for: tile)
+                            windowManager.setWindowFrame(id: windowID, frame: frame)
+                        }
+                    }
+                }
+                let key = layoutKey(for: displayID)
+                layoutStore.save(tileManager: manager, for: key)
+                break
+            }
+        }
     }
 }
 

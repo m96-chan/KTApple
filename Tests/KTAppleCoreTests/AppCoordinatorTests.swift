@@ -99,6 +99,35 @@ final class MockSpaceProvider: SpaceProvider {
     }
 }
 
+final class MockWindowLifecycleProvider: WindowLifecycleProvider {
+    var isMonitoring = false
+    var onCreated: ((WindowInfo) -> Void)?
+    var onDestroyed: ((UInt32) -> Void)?
+
+    func startMonitoring(
+        onWindowCreated: @escaping (WindowInfo) -> Void,
+        onWindowDestroyed: @escaping (UInt32) -> Void
+    ) {
+        isMonitoring = true
+        onCreated = onWindowCreated
+        onDestroyed = onWindowDestroyed
+    }
+
+    func stopMonitoring() {
+        isMonitoring = false
+        onCreated = nil
+        onDestroyed = nil
+    }
+
+    func simulateWindowCreated(_ window: WindowInfo) {
+        onCreated?(window)
+    }
+
+    func simulateWindowDestroyed(_ windowID: UInt32) {
+        onDestroyed?(windowID)
+    }
+}
+
 @Suite("AppCoordinator")
 struct AppCoordinatorTests {
     let displayFrame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
@@ -107,7 +136,8 @@ struct AppCoordinatorTests {
         trusted: Bool = true,
         displays: [DisplayInfo] = [],
         windows: [WindowInfo] = [],
-        spaceProvider: MockSpaceProvider? = nil
+        spaceProvider: MockSpaceProvider? = nil,
+        windowLifecycleProvider: MockWindowLifecycleProvider? = nil
     ) -> (AppCoordinator, MockAccessibilityChecker, CoordinatorMockDisplayProvider, CoordinatorMockHotkeyProvider, CoordinatorMockAccessibilityProvider, MockStorageProvider) {
         let checker = MockAccessibilityChecker()
         checker.isTrustedResult = trusted
@@ -126,7 +156,8 @@ struct AppCoordinatorTests {
             hotkeyProvider: hotkeyProvider,
             accessibilityAPIProvider: accessibilityProvider,
             storageProvider: storageProvider,
-            spaceProvider: spaceProvider
+            spaceProvider: spaceProvider,
+            windowLifecycleProvider: windowLifecycleProvider
         )
 
         return (coordinator, checker, displayProvider, hotkeyProvider, accessibilityProvider, storageProvider)
@@ -359,6 +390,43 @@ struct AppCoordinatorTests {
         #expect(!left.windowIDs.contains(10))
     }
 
+    @Test func toggleMaximizeExpandsToFullScreen() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let (coordinator, _, _, _, accessibilityProvider, _) = makeCoordinator(displays: [display])
+        coordinator.start()
+
+        let manager = coordinator.tileManagers[1]!
+        let (left, _) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
+        left.addWindow(id: 10)
+
+        coordinator.setFocusedWindowID(10)
+        coordinator.handleAction(.toggleMaximize)
+
+        // Window should be removed from tile
+        #expect(!left.windowIDs.contains(10))
+        // Window should be resized to screen frame
+        #expect(!accessibilityProvider.operations.isEmpty)
+    }
+
+    @Test func toggleMaximizeRestoresOriginalTile() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let (coordinator, _, _, _, _, _) = makeCoordinator(displays: [display])
+        coordinator.start()
+
+        let manager = coordinator.tileManagers[1]!
+        let (left, _) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
+        left.addWindow(id: 10)
+
+        coordinator.setFocusedWindowID(10)
+        // Maximize
+        coordinator.handleAction(.toggleMaximize)
+        #expect(!left.windowIDs.contains(10))
+
+        // Un-maximize
+        coordinator.handleAction(.toggleMaximize)
+        #expect(left.windowIDs.contains(10))
+    }
+
     // MARK: - Auto-Save
 
     @Test func splitTileAutoSaves() {
@@ -526,6 +594,55 @@ struct AppCoordinatorTests {
         coordinator.start()
 
         #expect(coordinator.currentWorkspaceIndex(for: 1) == 1)
+    }
+
+    // MARK: - Window Lifecycle
+
+    @Test func windowCreatedGetsAssignedToTile() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let lifecycleProvider = MockWindowLifecycleProvider()
+        let (coordinator, _, _, _, _, _) = makeCoordinator(displays: [display], windowLifecycleProvider: lifecycleProvider)
+        coordinator.start()
+
+        let manager = coordinator.tileManagers[1]!
+        let (left, right) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
+
+        let newWindow = WindowInfo(
+            id: 99, pid: 1, title: "New",
+            frame: CGRect(x: 100, y: 100, width: 800, height: 600),
+            isResizable: true, isMinimized: false, isFullscreen: false,
+            subrole: .standardWindow
+        )
+        lifecycleProvider.simulateWindowCreated(newWindow)
+
+        let hasWindow = left.windowIDs.contains(99) || right.windowIDs.contains(99)
+        #expect(hasWindow)
+    }
+
+    @Test func windowDestroyedRemovesFromTile() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let lifecycleProvider = MockWindowLifecycleProvider()
+        let (coordinator, _, _, _, _, _) = makeCoordinator(displays: [display], windowLifecycleProvider: lifecycleProvider)
+        coordinator.start()
+
+        let manager = coordinator.tileManagers[1]!
+        let (left, _) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
+        left.addWindow(id: 42)
+
+        lifecycleProvider.simulateWindowDestroyed(42)
+
+        #expect(!left.windowIDs.contains(42))
+    }
+
+    @Test func stopStopsWindowLifecycleMonitoring() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let lifecycleProvider = MockWindowLifecycleProvider()
+        let (coordinator, _, _, _, _, _) = makeCoordinator(displays: [display], windowLifecycleProvider: lifecycleProvider)
+        coordinator.start()
+        #expect(lifecycleProvider.isMonitoring)
+
+        coordinator.stop()
+        #expect(!lifecycleProvider.isMonitoring)
     }
 
     @Test func stopStopsSpaceObserving() {

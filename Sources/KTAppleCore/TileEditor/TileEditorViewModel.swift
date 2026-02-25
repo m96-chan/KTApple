@@ -58,6 +58,17 @@ public final class TileEditorViewModel: ObservableObject {
     /// Currently selected tile ID.
     @Published public var selectedTileID: UUID?
 
+    /// Whether undo is available.
+    @Published public var canUndo: Bool = false
+
+    /// Whether redo is available.
+    @Published public var canRedo: Bool = false
+
+    /// Undo history (snapshots of root tile tree).
+    private var undoStack: [Tile] = []
+    private var redoStack: [Tile] = []
+    private static let maxUndoDepth = 20
+
     /// Minimum gap used in the editor so boundaries remain visible and draggable.
     static let editorMinGap: CGFloat = 4
 
@@ -70,12 +81,45 @@ public final class TileEditorViewModel: ObservableObject {
         self.layoutKey = layoutKey
     }
 
+    // MARK: - Undo / Redo
+
+    private func saveSnapshot() {
+        undoStack.append(workingManager.root.deepCopy())
+        if undoStack.count > Self.maxUndoDepth {
+            undoStack.removeFirst()
+        }
+        redoStack.removeAll()
+        canUndo = true
+        canRedo = false
+    }
+
+    /// Undo the last editing operation.
+    public func undo() {
+        guard let snapshot = undoStack.popLast() else { return }
+        redoStack.append(workingManager.root.deepCopy())
+        workingManager.replaceRoot(snapshot)
+        isDirty = !undoStack.isEmpty
+        canUndo = !undoStack.isEmpty
+        canRedo = true
+    }
+
+    /// Redo the last undone operation.
+    public func redo() {
+        guard let snapshot = redoStack.popLast() else { return }
+        undoStack.append(workingManager.root.deepCopy())
+        workingManager.replaceRoot(snapshot)
+        isDirty = true
+        canUndo = true
+        canRedo = !redoStack.isEmpty
+    }
+
     // MARK: - Tile Operations
 
     /// Split a leaf tile into two children.
     @discardableResult
     public func splitTile(id: UUID, direction: LayoutDirection, ratio: CGFloat = 0.5) -> Bool {
         guard let tile = findTile(id: id, in: workingManager.root), tile.isLeaf else { return false }
+        saveSnapshot()
         workingManager.split(tile, direction: direction, ratio: ratio)
         isDirty = true
         return true
@@ -87,6 +131,7 @@ public final class TileEditorViewModel: ObservableObject {
         guard let tile = findTile(id: id, in: workingManager.root) else { return false }
         guard tile.parent != nil else { return false }  // Can't delete root
         guard tile.isLeaf else { return false }
+        saveSnapshot()
         workingManager.remove(tile)
         isDirty = true
         if selectedTileID == id { selectedTileID = nil }
@@ -99,6 +144,7 @@ public final class TileEditorViewModel: ObservableObject {
     public func resizeTile(id: UUID, newProportion: CGFloat) -> Bool {
         guard let tile = findTile(id: id, in: workingManager.root) else { return false }
         guard tile.parent != nil else { return false }
+        saveSnapshot()
         workingManager.resize(tile, newProportion: newProportion)
         isDirty = true
         return true
@@ -112,6 +158,7 @@ public final class TileEditorViewModel: ObservableObject {
               let parent = leftTile.parent,
               rightTile.parent === parent else { return false }
 
+        saveSnapshot()
         let total = leftTile.proportion + rightTile.proportion
         let newLeft = max(TileManager.minProportion, min(total - TileManager.minProportion, positionFraction * total))
         let newRight = total - newLeft
@@ -147,6 +194,7 @@ public final class TileEditorViewModel: ObservableObject {
         let combinedSize = combinedEnd - combinedStart
         guard combinedSize > 0 else { return false }
 
+        saveSnapshot()
         let fraction = (screenPosition - combinedStart) / combinedSize
         let total = leftTile.proportion + rightTile.proportion
         let newLeft = max(TileManager.minProportion, min(total - TileManager.minProportion, fraction * total))
@@ -177,12 +225,17 @@ public final class TileEditorViewModel: ObservableObject {
         isDirty = false
         selectedTileID = nil
         hoveredTileID = nil
+        undoStack.removeAll()
+        redoStack.removeAll()
+        canUndo = false
+        canRedo = false
     }
 
     // MARK: - Presets
 
     /// Apply a layout preset to the working copy.
     public func applyPreset(_ preset: LayoutPreset) {
+        saveSnapshot()
         preset.apply(to: workingManager)
         isDirty = true
         selectedTileID = nil

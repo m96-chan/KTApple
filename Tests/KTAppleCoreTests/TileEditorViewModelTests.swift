@@ -279,6 +279,76 @@ struct TileEditorViewModelTests {
         #expect(vm.tile(withID: UUID()) == nil)
     }
 
+    // MARK: - Undo / Redo
+
+    @Test func undoRevertsLastOperation() {
+        let (vm, _) = makeVM()
+        let rootID = vm.workingManager.root.id
+        vm.splitTile(id: rootID, direction: .horizontal)
+        #expect(vm.workingManager.root.children.count == 2)
+        #expect(vm.canUndo)
+
+        vm.undo()
+
+        #expect(vm.workingManager.root.isLeaf)
+        #expect(!vm.canUndo)
+        #expect(vm.canRedo)
+    }
+
+    @Test func redoReappliesUndoneOperation() {
+        let (vm, _) = makeVM()
+        let rootID = vm.workingManager.root.id
+        vm.splitTile(id: rootID, direction: .horizontal)
+        vm.undo()
+        #expect(vm.workingManager.root.isLeaf)
+
+        vm.redo()
+
+        #expect(vm.workingManager.root.children.count == 2)
+        #expect(vm.canUndo)
+        #expect(!vm.canRedo)
+    }
+
+    @Test func undoRedoMultipleSteps() {
+        let (vm, _) = makeVM()
+        let rootID = vm.workingManager.root.id
+        vm.splitTile(id: rootID, direction: .horizontal)
+        let childID = vm.workingManager.root.children[0].id
+        vm.splitTile(id: childID, direction: .vertical)
+        #expect(vm.workingManager.leafTiles().count == 3)
+
+        vm.undo()
+        #expect(vm.workingManager.leafTiles().count == 2)
+
+        vm.undo()
+        #expect(vm.workingManager.root.isLeaf)
+
+        vm.redo()
+        #expect(vm.workingManager.leafTiles().count == 2)
+    }
+
+    @Test func newOperationClearsRedoStack() {
+        let (vm, _) = makeVM()
+        let rootID = vm.workingManager.root.id
+        vm.splitTile(id: rootID, direction: .horizontal)
+        vm.undo()
+        #expect(vm.canRedo)
+
+        vm.splitTile(id: vm.workingManager.root.id, direction: .vertical)
+        #expect(!vm.canRedo)
+    }
+
+    @Test func cancelClearsUndoRedo() {
+        let (vm, _) = makeVM()
+        let rootID = vm.workingManager.root.id
+        vm.splitTile(id: rootID, direction: .horizontal)
+        #expect(vm.canUndo)
+
+        vm.cancel()
+        #expect(!vm.canUndo)
+        #expect(!vm.canRedo)
+    }
+
     // MARK: - Helpers
 
     private func isApprox(_ a: CGFloat, _ b: CGFloat, tolerance: CGFloat = 1.0) -> Bool {
