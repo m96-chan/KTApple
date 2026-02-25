@@ -258,3 +258,18 @@ public final class AppCoordinator: DisplayObserverDelegate {
         tile.removeWindow(id: windowID)
     }
 }
+
+// MARK: - DragDropDelegate
+
+extension AppCoordinator: DragDropDelegate {
+    public func didDropWindow(_ windowID: UInt32, onTile tileID: UUID) {
+        for (_, manager) in tileManagers {
+            if let tile = findTile(id: tileID, in: manager.root) {
+                windowManager.assignWindow(id: windowID, to: tile, tileManager: manager)
+                break
+            }
+        }
+    }
+
+    public func didCancelDrop() {}
+}

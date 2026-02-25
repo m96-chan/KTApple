@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var coordinator: AppCoordinator?
     private var hotkeyProvider: LiveHotkeyProvider?
     private var tileEditorWindow: TileEditorWindow?
+    private var dragDropHandler: DragDropHandler?
     private var hasShownAccessibilityPrompt = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -51,6 +52,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.coordinator = coordinator
         self.hotkeyProvider = hotkeyProvider
 
+        setupDragDrop()
+
         // If accessibility not granted, open System Settings once
         if !coordinator.accessibilityGranted {
             hasShownAccessibilityPrompt = true
@@ -65,6 +68,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarController = StatusBarController(onOpenEditor: { [weak self] in
             self?.openTileEditor()
         })
+    }
+
+    // MARK: - Drag & Drop
+
+    private func setupDragDrop() {
+        guard let coordinator,
+              coordinator.accessibilityGranted,
+              let (_, tileManager) = coordinator.tileManagers.first else { return }
+
+        let eventProvider = LiveEventProvider()
+        let overlayProvider = LiveOverlayProvider()
+        let handler = DragDropHandler(
+            eventProvider: eventProvider,
+            overlayProvider: overlayProvider,
+            tileManager: tileManager
+        )
+        handler.delegate = coordinator
+        handler.startMonitoring()
+        self.dragDropHandler = handler
     }
 
     // MARK: - Tile Editor
