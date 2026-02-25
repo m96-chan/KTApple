@@ -71,6 +71,12 @@ cp "$PLIST_SRC" "$APP_DIR/Contents/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP_DIR/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$VERSION" "$APP_DIR/Contents/Info.plist"
 
+# Copy app icon
+ICON="$PROJECT_DIR/Assets/$APP_NAME.icns"
+if [[ -f "$ICON" ]]; then
+    cp "$ICON" "$APP_DIR/Contents/Resources/"
+fi
+
 # Copy entitlements into Resources (informational; code signing uses them separately)
 ENTITLEMENTS="$PROJECT_DIR/Sources/$APP_NAME/$APP_NAME.entitlements"
 if [[ -f "$ENTITLEMENTS" ]]; then
