@@ -22,7 +22,11 @@
 > Design your tile layout visually, drop windows in with Shift+Drag, and resize by dragging boundaries — no config files needed.
 
 <p align="center">
-  <iframe width="600" height="390" src="https://www.youtube.com/embed/isBXA214bcE" frameborder="0" allowfullscreen></iframe>
+  <a href="https://youtu.be/isBXA214bcE">
+    <img src="https://img.youtube.com/vi/isBXA214bcE/maxresdefault.jpg" width="600" alt="KTApple Demo" />
+  </a>
+  <br />
+  <sub>▶ Watch the demo on YouTube</sub>
 </p>
 
 ## Why KTApple?
