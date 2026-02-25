@@ -124,7 +124,7 @@ struct CanvasEventOverlay: NSViewRepresentable {
         var screenFrame: CGRect
         weak var canvasView: NSView?
 
-        private let snapDistance: CGFloat = 15
+        private let snapDistance: CGFloat = 20
 
         init(viewModel: TileEditorViewModel, dragState: CanvasDragState,
              scaleX: CGFloat, scaleY: CGFloat, screenFrame: CGRect) {

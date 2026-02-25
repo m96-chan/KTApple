@@ -19,8 +19,8 @@ struct TileBorderDragHandle: View {
             height: boundary.rect.height * scaleY
         )
 
-        let lineWidth: CGFloat = boundary.axis == .horizontal ? 2 : rawRect.width
-        let lineHeight: CGFloat = boundary.axis == .vertical ? 2 : rawRect.height
+        let lineWidth: CGFloat = boundary.axis == .horizontal ? 4 : rawRect.width
+        let lineHeight: CGFloat = boundary.axis == .vertical ? 4 : rawRect.height
 
         Rectangle()
             .fill(isActive ? Color.accentColor.opacity(0.8) : Color.white.opacity(0.4))

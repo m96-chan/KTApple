@@ -26,8 +26,9 @@ final class StatusBarController {
         let editorItem = NSMenuItem(
             title: "Open Tile Editor",
             action: #selector(MenuActionTarget.openEditor(_:)),
-            keyEquivalent: ""
+            keyEquivalent: "t"
         )
+        editorItem.keyEquivalentModifierMask = [.control, .option]
         editorItem.target = menuTarget
         menu.addItem(editorItem)
 
