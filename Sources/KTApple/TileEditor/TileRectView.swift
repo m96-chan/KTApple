@@ -59,12 +59,12 @@ struct TileRectView: View {
                 // Inline action buttons
                 tileButton(
                     label: "Split H",
-                    icon: "rectangle.split.1x2",
+                    icon: "rectangle.split.2x1",
                     action: onSplitH
                 )
                 tileButton(
                     label: "Split V",
-                    icon: "rectangle.split.2x1",
+                    icon: "rectangle.split.1x2",
                     action: onSplitV
                 )
                 if canDelete {

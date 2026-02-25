@@ -262,4 +262,6 @@ final class MockAccessibilityProvider: AccessibilityProvider {
         lastResizeSize = size
         operationLog.append(.resize(id: id, size: size))
     }
+
+    func focusWindow(id: UInt32) {}
 }

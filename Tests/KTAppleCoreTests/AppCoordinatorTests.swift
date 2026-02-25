@@ -63,11 +63,16 @@ final class CoordinatorMockAccessibilityProvider: AccessibilityProvider {
     func windowFrame(id: UInt32) -> CGRect? {
         windows.first { $0.id == id }?.frame
     }
+
+    func focusWindow(id: UInt32) {
+        operations.append(.focus(id))
+    }
 }
 
-enum CoordinatorAccessibilityOp {
+enum CoordinatorAccessibilityOp: Equatable {
     case move(UInt32, CGPoint)
     case resize(UInt32, CGSize)
+    case focus(UInt32)
 }
 
 final class MockSpaceProvider: SpaceProvider {
@@ -326,6 +331,27 @@ struct AppCoordinatorTests {
         #expect(coordinator.focusedWindowID == 20)
     }
 
+    @Test func focusActionRaisesTargetWindow() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let (coordinator, _, _, _, accessibilityProvider, _) = makeCoordinator(displays: [display])
+        coordinator.start()
+
+        let manager = coordinator.tileManagers[1]!
+        let (left, right) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
+        left.addWindow(id: 10)
+        right.addWindow(id: 20)
+
+        coordinator.setFocusedWindowID(10)
+        accessibilityProvider.operations.removeAll()
+        coordinator.handleAction(.focusRight)
+
+        // Should call focusWindow to actually raise the window
+        #expect(accessibilityProvider.operations.contains { op in
+            if case .focus(20) = op { return true }
+            return false
+        })
+    }
+
     @Test func moveActionMovesWindow() {
         let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
         let (coordinator, _, _, _, accessibilityProvider, _) = makeCoordinator(displays: [display])
@@ -345,34 +371,42 @@ struct AppCoordinatorTests {
 
     @Test func expandTileAction() {
         let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
-        let (coordinator, _, _, _, _, _) = makeCoordinator(displays: [display])
+        let (coordinator, _, _, _, accessibilityProvider, _) = makeCoordinator(displays: [display])
         coordinator.start()
 
         let manager = coordinator.tileManagers[1]!
-        let (left, _) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
+        let (left, right) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
         left.addWindow(id: 10)
+        right.addWindow(id: 20)
 
         let originalProportion = left.proportion
         coordinator.setFocusedWindowID(10)
+        accessibilityProvider.operations.removeAll()
         coordinator.handleAction(.expandTile)
 
         #expect(left.proportion > originalProportion)
+        // Windows should be resized on screen
+        #expect(!accessibilityProvider.operations.isEmpty)
     }
 
     @Test func shrinkTileAction() {
         let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
-        let (coordinator, _, _, _, _, _) = makeCoordinator(displays: [display])
+        let (coordinator, _, _, _, accessibilityProvider, _) = makeCoordinator(displays: [display])
         coordinator.start()
 
         let manager = coordinator.tileManagers[1]!
-        let (left, _) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
+        let (left, right) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
         left.addWindow(id: 10)
+        right.addWindow(id: 20)
 
         let originalProportion = left.proportion
         coordinator.setFocusedWindowID(10)
+        accessibilityProvider.operations.removeAll()
         coordinator.handleAction(.shrinkTile)
 
         #expect(left.proportion < originalProportion)
+        // Windows should be resized on screen
+        #expect(!accessibilityProvider.operations.isEmpty)
     }
 
     @Test func toggleFloatingRemovesWindowFromTile() {

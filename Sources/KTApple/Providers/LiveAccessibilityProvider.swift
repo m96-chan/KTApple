@@ -67,6 +67,19 @@ final class LiveAccessibilityProvider: AccessibilityProvider {
         AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, value)
     }
 
+    func focusWindow(id: UInt32) {
+        guard let element = axElement(for: id) else { return }
+        AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
+        AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+
+        // Also raise the owning application
+        guard let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]],
+              let dict = windowList.first(where: { ($0[kCGWindowNumber as String] as? UInt32) == id }),
+              let pid = dict[kCGWindowOwnerPID as String] as? Int32 else { return }
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+    }
+
     func windowFrame(id: UInt32) -> CGRect? {
         guard let element = axElement(for: id) else { return nil }
 

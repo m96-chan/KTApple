@@ -372,6 +372,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
         guard let adjacent = manager.adjacentTile(to: tile, direction: direction) else { return }
         if let targetWindowID = adjacent.windowIDs.first {
             focusedWindowID = targetWindowID
+            windowManager.focusWindow(id: targetWindowID)
         }
     }
 
@@ -393,6 +394,17 @@ public final class AppCoordinator: DisplayObserverDelegate {
         guard let (manager, tile) = findTileContaining(windowID: windowID) else { return }
         let newProportion = tile.proportion + delta
         manager.resize(tile, newProportion: newProportion)
+
+        // Reflow windows in affected tiles (the resized tile and its siblings)
+        guard let parent = tile.parent else { return }
+        for sibling in parent.children {
+            for leaf in sibling.leafTiles() {
+                for wid in leaf.windowIDs {
+                    let frame = manager.frame(for: leaf)
+                    windowManager.setWindowFrame(id: wid, frame: frame)
+                }
+            }
+        }
     }
 
     private func toggleFloating(windowID: UInt32) {

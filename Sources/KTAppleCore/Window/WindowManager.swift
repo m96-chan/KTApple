@@ -82,6 +82,11 @@ public final class WindowManager {
         }
     }
 
+    /// Raise and focus a window.
+    public func focusWindow(id: UInt32) {
+        provider.focusWindow(id: id)
+    }
+
     // MARK: - Auto-Float Detection
 
     /// Determine if a window should be treated as floating.
