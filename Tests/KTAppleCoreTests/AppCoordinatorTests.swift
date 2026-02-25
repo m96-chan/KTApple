@@ -427,6 +427,21 @@ struct AppCoordinatorTests {
         #expect(left.windowIDs.contains(10))
     }
 
+    @Test func openEditorWorksWithoutFocusedWindow() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let (coordinator, _, _, _, _, _) = makeCoordinator(displays: [display])
+        coordinator.start()
+
+        // No focused window set — focusedWindowID is nil
+        #expect(coordinator.focusedWindowID == nil)
+
+        var editorOpened = false
+        coordinator.onOpenEditor = { editorOpened = true }
+        coordinator.handleAction(.openEditor)
+
+        #expect(editorOpened)
+    }
+
     // MARK: - Auto-Save
 
     @Test func splitTileAutoSaves() {

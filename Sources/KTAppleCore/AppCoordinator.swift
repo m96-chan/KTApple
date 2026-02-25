@@ -133,6 +133,12 @@ public final class AppCoordinator: DisplayObserverDelegate {
 
     /// Handle a triggered hotkey action.
     public func handleAction(_ action: HotkeyAction) {
+        // Actions that don't require a focused window
+        if action == .openEditor {
+            onOpenEditor?()
+            return
+        }
+
         guard let windowID = focusedWindowID else { return }
 
         switch action {
@@ -158,10 +164,10 @@ public final class AppCoordinator: DisplayObserverDelegate {
             resizeFocusedTile(windowID: windowID, delta: -0.05)
         case .toggleFloating:
             toggleFloating(windowID: windowID)
-        case .openEditor:
-            onOpenEditor?()
         case .toggleMaximize:
             toggleMaximize(windowID: windowID)
+        case .openEditor:
+            break // handled above
         }
     }
 
