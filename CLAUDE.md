@@ -74,6 +74,16 @@ public var id: String { "\(leftTileID)_\(rightTileID)" }
 When moving windows between displays, macOS enforces size constraints. Always:
 1. `resizeWindow` → 2. `moveWindow` → 3. `resizeWindow` (same size again)
 
+### macOS App Installation — Must delete old .app before replacing
+
+When installing a new build to `/Applications`, **always delete the old .app first**. macOS caches the old binary and simply overwriting (drag & drop) does not replace it. The old version keeps running even after copying the new one.
+
+```sh
+rm -rf /Applications/KTApple.app
+cp -R .build/release/KTApple.app /Applications/
+xattr -cr /Applications/KTApple.app
+```
+
 ### Tile Coordinate System
 
 Tiles use proportional coordinates (0.0–1.0) relative to siblings, not absolute screen positions. When converting screen positions to tile proportions, always account for the parent tile's offset (use `rawFrame(for:)` to get the parent's position).
