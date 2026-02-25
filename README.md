@@ -21,6 +21,14 @@
 > A tiling window manager that brings the flexibility of KDE Plasma's KWin Tiling to macOS.
 > Design your tile layout visually, drop windows in with Shift+Drag, and resize by dragging boundaries — no config files needed.
 
+<p align="center">
+  <a href="https://youtu.be/isBXA214bcE">
+    <img src="https://img.youtube.com/vi/isBXA214bcE/maxresdefault.jpg" width="600" alt="KTApple Demo" />
+  </a>
+  <br />
+  <sub>▶ Watch the demo on YouTube</sub>
+</p>
+
 ## Why KTApple?
 
 Existing macOS tiling WMs force you into fixed layouts or text-based configs.
