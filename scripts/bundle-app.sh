@@ -80,6 +80,13 @@ fi
 # Write PkgInfo
 echo -n "APPL????" > "$APP_DIR/Contents/PkgInfo"
 
+# Ad-hoc code sign with entitlements so macOS tracks accessibility by bundle ID
+echo "==> Signing $APP_NAME.app (ad-hoc)..."
+codesign --force --sign - \
+    --entitlements "$ENTITLEMENTS" \
+    --identifier "com.m96chan.KTApple" \
+    "$APP_DIR"
+
 echo "==> Built $APP_DIR"
 
 if [[ "$CREATE_DMG" == true ]]; then

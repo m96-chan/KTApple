@@ -21,6 +21,11 @@ public final class TileManager {
     /// Root tile covering the entire screen.
     public private(set) var root: Tile
 
+    /// Replace the root tile with a new tile tree.
+    public func replaceRoot(_ newRoot: Tile) {
+        root = newRoot
+    }
+
     public init(displayID: UInt32, screenFrame: CGRect, gap: CGFloat = 8) {
         self.displayID = displayID
         self.screenFrame = screenFrame
