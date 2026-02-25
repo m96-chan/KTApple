@@ -302,7 +302,7 @@ public final class TileEditorViewModel: ObservableObject {
                     rightTileID: trailing.id,
                     axis: .horizontal,
                     position: x,
-                    rect: CGRect(x: x - 2, y: leadingFrame.minY, width: 4, height: leadingFrame.height)
+                    rect: CGRect(x: x - 4, y: leadingFrame.minY, width: 8, height: leadingFrame.height)
                 ))
             case .vertical:
                 let y = (leadingFrame.maxY + trailingFrame.minY) / 2
@@ -311,7 +311,7 @@ public final class TileEditorViewModel: ObservableObject {
                     rightTileID: trailing.id,
                     axis: .vertical,
                     position: y,
-                    rect: CGRect(x: leadingFrame.minX, y: y - 2, width: leadingFrame.width, height: 4)
+                    rect: CGRect(x: leadingFrame.minX, y: y - 4, width: leadingFrame.width, height: 8)
                 ))
             }
         }

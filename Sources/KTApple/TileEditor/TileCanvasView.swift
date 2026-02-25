@@ -9,6 +9,7 @@ private let log = Logger(subsystem: "com.m96chan.KTApple", category: "TileCanvas
 /// published to drive visual updates at controlled points.
 final class CanvasDragState: ObservableObject {
     var activeBoundaryID: String?
+    var hoveredBoundaryID: String?
     var dragOffset: CGFloat = 0
     var previousPosition: CGFloat?
     var activeBoundary: EditorTileBoundary?
@@ -65,6 +66,7 @@ struct TileCanvasView: View {
                         scaleY: scaleY,
                         screenFrameOrigin: screenFrame.origin,
                         isActive: dragState.activeBoundaryID == boundary.id,
+                        isHovered: dragState.hoveredBoundaryID == boundary.id,
                         dragOffset: dragState.activeBoundaryID == boundary.id ? dragState.dragOffset : 0
                     )
                 }
@@ -124,7 +126,7 @@ struct CanvasEventOverlay: NSViewRepresentable {
         var screenFrame: CGRect
         weak var canvasView: NSView?
 
-        private let snapDistance: CGFloat = 20
+        private let snapDistance: CGFloat = 30
 
         init(viewModel: TileEditorViewModel, dragState: CanvasDragState,
              scaleX: CGFloat, scaleY: CGFloat, screenFrame: CGRect) {
@@ -189,6 +191,42 @@ struct CanvasEventOverlay: NSViewRepresentable {
             dragState.renderToken += 1
         }
 
+        func mouseMoved(at windowPoint: CGPoint) {
+            guard dragState.activeBoundaryID == nil,
+                  let canvasView else { return }
+            let canvasPoint = canvasView.convert(windowPoint, from: nil)
+            let boundaries = viewModel.boundaries()
+
+            var found: EditorTileBoundary?
+            for boundary in boundaries {
+                let bx = (boundary.rect.midX - screenFrame.origin.x) * scaleX
+                let by = (boundary.rect.midY - screenFrame.origin.y) * scaleY
+                let distance: CGFloat
+                switch boundary.axis {
+                case .horizontal: distance = abs(canvasPoint.x - bx)
+                case .vertical: distance = abs(canvasPoint.y - by)
+                }
+                if distance < snapDistance {
+                    found = boundary
+                    break
+                }
+            }
+
+            if dragState.hoveredBoundaryID != found?.id {
+                dragState.hoveredBoundaryID = found?.id
+                dragState.renderToken += 1
+            }
+
+            if let boundary = found {
+                switch boundary.axis {
+                case .horizontal: NSCursor.resizeLeftRight.set()
+                case .vertical: NSCursor.resizeUpDown.set()
+                }
+            } else {
+                NSCursor.arrow.set()
+            }
+        }
+
         func mouseUp(at windowPoint: CGPoint) {
             guard dragState.activeBoundaryID != nil,
                   let boundary = dragState.activeBoundary,
@@ -217,7 +255,9 @@ struct CanvasEventOverlay: NSViewRepresentable {
             )
 
             dragState.reset()
+            dragState.hoveredBoundaryID = nil
             dragState.renderToken += 1
+            NSCursor.arrow.set()
         }
 
     }
@@ -229,6 +269,20 @@ final class CanvasTrackingView: NSView {
     weak var coordinator: CanvasEventOverlay.Coordinator?
 
     override var isFlipped: Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect],
+            owner: self
+        ))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        coordinator?.mouseMoved(at: event.locationInWindow)
+    }
 
     override func mouseDown(with event: NSEvent) {
         coordinator?.mouseDown(at: event.locationInWindow)

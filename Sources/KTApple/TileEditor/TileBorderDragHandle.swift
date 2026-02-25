@@ -9,6 +9,7 @@ struct TileBorderDragHandle: View {
     let scaleY: CGFloat
     let screenFrameOrigin: CGPoint
     let isActive: Bool
+    let isHovered: Bool
     let dragOffset: CGFloat
 
     var body: some View {
@@ -19,11 +20,19 @@ struct TileBorderDragHandle: View {
             height: boundary.rect.height * scaleY
         )
 
-        let lineWidth: CGFloat = boundary.axis == .horizontal ? 4 : rawRect.width
-        let lineHeight: CGFloat = boundary.axis == .vertical ? 4 : rawRect.height
+        let lineWidth: CGFloat = boundary.axis == .horizontal ? 8 : rawRect.width
+        let lineHeight: CGFloat = boundary.axis == .vertical ? 8 : rawRect.height
+
+        let color: Color = if isActive {
+            Color.accentColor.opacity(0.8)
+        } else if isHovered {
+            Color.white.opacity(0.7)
+        } else {
+            Color.white.opacity(0.4)
+        }
 
         Rectangle()
-            .fill(isActive ? Color.accentColor.opacity(0.8) : Color.white.opacity(0.4))
+            .fill(color)
             .frame(width: lineWidth, height: lineHeight)
             .position(
                 x: rawRect.midX + (boundary.axis == .horizontal ? dragOffset : 0),
