@@ -1,54 +1,112 @@
-# KTApple
+<p align="center">
+  <img src="Assets/KTApple.png" width="128" alt="KTApple icon" />
+</p>
 
-**KDE Plasma KWin Tiling for macOS**
+<h1 align="center">KTApple</h1>
 
-KTApple is a window manager that brings KDE Plasma's KWin Tiling to macOS.
-It features a GUI-based tile layout editor and intuitive window placement via Shift + Drag.
+<p align="center">
+  <strong>KDE Plasma KWin Tiling — reimagined for macOS</strong>
+</p>
 
-## Highlights
+<p align="center">
+  <a href="https://github.com/m96-chan/KTApple/releases/latest"><img src="https://img.shields.io/github/v/release/m96-chan/KTApple?style=flat-square" alt="Release" /></a>
+  <a href="https://github.com/m96-chan/KTApple/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/m96-chan/KTApple/test.yml?branch=main&style=flat-square&label=tests" alt="Tests" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/m96-chan/KTApple?style=flat-square" alt="License" /></a>
+  <img src="https://img.shields.io/badge/platform-macOS%2014%2B-blue?style=flat-square" alt="Platform" />
+  <img src="https://img.shields.io/badge/Swift-6-orange?style=flat-square" alt="Swift 6" />
+</p>
 
-Features not found in existing macOS tiling WMs (yabai, AeroSpace, Amethyst, Rectangle):
+---
 
-- **Visual Tile Editor** -- Add, remove, and resize tiles freely through a GUI
-- **Shift + Drop Placement** -- Hold Shift while dragging a window to place it into any tile
-- **Gap-Drag Resize** -- Drag the boundary between tiles to resize adjacent windows simultaneously
-- **No SIP Disable Required** -- Uses only public macOS APIs (Accessibility API)
+> A tiling window manager that brings the flexibility of KDE Plasma's KWin Tiling to macOS.
+> Design your tile layout visually, drop windows in with Shift+Drag, and resize by dragging boundaries — no config files needed.
 
-## Features
+## Why KTApple?
 
-### Tile Layout Editor
+Existing macOS tiling WMs force you into fixed layouts or text-based configs.
+KTApple takes the approach KDE Plasma got right: **a visual editor where you design the layout you want**.
 
-| Feature | Description |
+| | KTApple | yabai | AeroSpace | Amethyst | Rectangle |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Visual Tile Editor | **Yes** | — | — | — | — |
+| Free Tile Placement | **Yes** | BSP only | i3 tree | Fixed | Presets |
+| Shift+Drop Placement | **Yes** | Zones | — | — | Snap |
+| Gap-Drag Resize | **Yes** | — | — | — | — |
+| No SIP Required | **Yes** | Partial | Yes | Yes | Yes |
+| GUI Settings | **Yes** | CLI | TOML | GUI | GUI |
+
+## Quick Start
+
+### Install via Homebrew
+
+```sh
+brew tap m96-chan/homebrew-tap
+brew install --cask --no-quarantine ktapple
+```
+
+### Or download manually
+
+1. Grab the `.dmg` from [**Releases**](https://github.com/m96-chan/KTApple/releases/latest)
+2. Move `KTApple.app` to `/Applications`
+3. Remove quarantine: `xattr -cr /Applications/KTApple.app`
+4. Grant Accessibility permission in **System Settings > Privacy & Security > Accessibility**
+
+> [!NOTE]
+> KTApple is ad-hoc signed (no Apple Developer Program). Gatekeeper bypass via `xattr -cr` or Homebrew `--no-quarantine` is required.
+
+## Key Features
+
+### Visual Tile Editor (`⌃⌥T`)
+
+Split, resize, and delete tiles through an interactive GUI.
+Layouts are stored in normalized 0.0–1.0 coordinates — resolution-independent and portable.
+
+```
+┌────────────┬──────────┐
+│            │   Top-R  │
+│   Left     ├──────────┤
+│   (60%)    │ Bottom-R │
+│            │  (40%)   │
+└────────────┴──────────┘
+```
+
+### Shift+Drop Window Placement
+
+Hold <kbd>Shift</kbd> while dragging any window. A tile highlight appears — release to snap the window into place.
+
+### Gap-Drag Resize
+
+Drag the boundary line between any two tiles. Both adjacent windows resize in real time.
+
+### Keyboard Shortcuts
+
+| Shortcut | Action |
 |---|---|
-| Tile Splitting | Split tiles horizontally or vertically |
-| Free Resize | Drag to freely adjust tile width and height |
-| Tile Deletion | Remove tiles; adjacent tiles absorb the freed space |
-| Layout Presets | Apply common layouts (half split, 3-column, grid, etc.) with one click |
-| Relative Coordinates | Managed in normalized 0.0--1.0 coordinates, resolution-independent |
-
-### Window Management
-
-| Feature | Description |
-|---|---|
-| Shift + Drop | Hold Shift while dragging to place a window into a tile |
-| Gap Drag | Drag the boundary between tiles to resize adjacent windows simultaneously |
-| Floating | Supports floating windows that are not assigned to any tile |
-| Auto-Float Detection | Dialogs and non-resizable windows are automatically treated as floating |
-| Keyboard Shortcuts | Move, resize, and switch focus between windows via keyboard |
-
-### Display & Workspace
-
-| Feature | Description |
-|---|---|
-| Multi-Monitor | Independent tile layouts per display |
-| Virtual Workspaces | Different tile layouts per desktop/workspace |
-| Layout Persistence | Save and restore layouts in JSON format |
+| <kbd>⌃</kbd><kbd>⌥</kbd><kbd>T</kbd> | Open tile editor |
+| <kbd>⌃</kbd><kbd>⌥</kbd> + Arrow | Move focus |
+| <kbd>⌃</kbd><kbd>⌥</kbd><kbd>⇧</kbd> + Arrow | Move window |
+| <kbd>⌃</kbd><kbd>⌥</kbd><kbd>F</kbd> | Toggle float |
+| <kbd>⌃</kbd><kbd>⌥</kbd><kbd>M</kbd> | Toggle maximize |
+| <kbd>⌃</kbd><kbd>⌥</kbd><kbd>=</kbd> / <kbd>-</kbd> | Expand / shrink tile |
 
 ## Architecture
 
-### Tile Tree Structure
+```
+KTApple
+├── TileManager         Per-display tile tree management
+├── TileEditor          Visual tile editor (SwiftUI)
+├── WindowManager       Window ops via Accessibility API
+├── HotkeyManager       Global shortcut registration
+├── DragDropHandler     Shift+Drag detection & tile snapping
+├── GapResizeHandler    Boundary drag-resize handling
+├── LayoutStore         JSON layout persistence
+└── DisplayObserver     Monitor hotplug observation
+```
 
-Tiles are managed in a tree structure, following the same model as KWin.
+<details>
+<summary><strong>Tile Tree Structure</strong></summary>
+
+Tiles follow the same tree model as KWin:
 
 ```
 RootTile (Screen)
@@ -60,102 +118,53 @@ RootTile (Screen)
     └── Tile (Bottom-Right)
 ```
 
-Each tile node has the following properties:
+Each node carries:
+- **proportion** — Size relative to siblings (0.0–1.0)
+- **layoutDirection** — Horizontal / Vertical
+- **children** — Arbitrary child count
+- **windowIDs** — Assigned windows
 
-- **relativeGeometry** -- Position relative to parent tile (0.0--1.0)
-- **layoutDirection** -- Child tile arrangement (Horizontal / Vertical / Floating)
-- **children** -- Array of child tiles (arbitrary count)
-- **windows** -- References to windows assigned to the tile
+</details>
 
-### Component Structure
-
-```
-KTApple
-├── TileManager         # Per-display tile tree management
-├── TileEditor          # Visual tile editor (SwiftUI)
-├── WindowManager       # Window operations via Accessibility API
-├── HotkeyManager       # Global shortcut registration and handling
-├── DragDropHandler     # Shift + Drag detection and tile snapping
-├── GapResizeHandler    # Tile boundary drag-resize handling
-├── LayoutStore         # JSON persistence for layouts
-└── DisplayObserver     # Monitor connect/disconnect observation
-```
-
-### macOS API Strategy
+<details>
+<summary><strong>macOS API Usage</strong></summary>
 
 | Layer | API |
 |---|---|
 | Window Operations | `AXUIElement` (Accessibility API) |
 | Window Enumeration | `CGWindowListCopyWindowInfo` |
-| Global Event Monitoring | `CGEvent` Tap / `NSEvent.addGlobalMonitorForEvents` |
-| Hotkey Registration | `Carbon.HIToolbox` (RegisterEventHotKey) |
+| Global Events | `CGEvent` Tap / `NSEvent.addGlobalMonitorForEvents` |
+| Hotkeys | `Carbon.HIToolbox` (RegisterEventHotKey) |
 | Display Monitoring | `CGDisplayRegisterReconfigurationCallback` |
 | UI | SwiftUI |
 
+</details>
+
 ## Requirements
 
-- **macOS 14.0+** (Sonoma or later)
-- **Swift 6 / Xcode 16+**
-- **Accessibility Permission** -- Must be granted in System Settings > Privacy & Security > Accessibility
-- **No SIP disable required**
-
-## Default Keyboard Shortcuts
-
-| Shortcut | Action |
-|---|---|
-| `⌃⌥T` | Open tile editor |
-| `⌃⌥←→↑↓` | Move focus to adjacent tile |
-| `⌃⌥⇧←→↑↓` | Move window to adjacent tile |
-| `⌃⌥F` | Toggle window floating |
-| `⌃⌥M` | Toggle window maximize |
-| `⌃⌥=` / `⌃⌥-` | Expand / shrink current tile |
-
-## Comparison with Existing Tools
-
-| Feature | KTApple | yabai | AeroSpace | Amethyst | Rectangle |
-|---|---|---|---|---|---|
-| Visual Tile Editor | **Yes** | No | No | No | No |
-| Free Tile Placement | **Yes** | BSP only | i3 tree | Fixed layouts | Presets only |
-| Shift + Drop Placement | **Yes** | Drag zones | No | No | Drag snap |
-| Gap-Drag Resize | **Yes** | No | No | No | No |
-| Auto-Tiling | Optional | Yes | Yes | Yes | No |
-| No SIP Required | **Yes** | Partial | Yes | Yes | Yes |
-| GUI Settings | **Yes** | CLI only | TOML | GUI | GUI |
-
-## Installation
-
-### Homebrew
-
-```sh
-brew tap m96-chan/homebrew-tap
-brew install --cask --no-quarantine ktapple
-```
-
-### Manual Installation
-
-1. Download `.dmg` from [Releases](https://github.com/m96-chan/KTApple/releases)
-2. Move `KTApple.app` to `/Applications`
-3. Remove quarantine attribute:
-   ```sh
-   xattr -cr /Applications/KTApple.app
-   ```
-4. Grant permission in System Settings > Privacy & Security > Accessibility
-
-> **Note**: Cannot be distributed via the Mac App Store due to Accessibility API sandbox restrictions. The app is ad-hoc signed (no Apple Developer Program). Gatekeeper bypass is required via `xattr -cr` or Homebrew's `--no-quarantine` flag.
-
-## Distribution
-
-- Distributed outside the Mac App Store (App Sandbox is incompatible with Accessibility API)
-- Ad-hoc signed (no Developer ID / notarization)
-- Homebrew tap: `m96-chan/homebrew-tap` with `--no-quarantine` cask
+- **macOS 14.0+** (Sonoma)
+- **Swift 6 / Xcode 16+** (to build from source)
+- **Accessibility permission**
+- No SIP disable required
 
 ## Documentation
 
-See the [docs/](docs/) directory for detailed guides:
+| Guide | Description |
+|---|---|
+| [Getting Started](docs/getting-started.md) | Installation, setup, first steps |
+| [Keyboard Shortcuts](docs/keyboard-shortcuts.md) | Full shortcut reference |
+| [Architecture](docs/architecture.md) | Internals for contributors |
 
-- [Getting Started](docs/getting-started.md) -- Installation, setup, and first steps
-- [Keyboard Shortcuts](docs/keyboard-shortcuts.md) -- Full shortcut reference
-- [Architecture](docs/architecture.md) -- Internals for contributors
+## Contributing
+
+Contributions are welcome! Please open an issue first to discuss what you'd like to change.
+
+```sh
+git clone https://github.com/m96-chan/KTApple.git
+cd KTApple
+swift build
+swift test
+```
 
 ## License
 
