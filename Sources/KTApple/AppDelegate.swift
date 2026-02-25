@@ -212,7 +212,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 tileManager: tileManager,
                 layoutStore: coordinator.layoutStore,
                 layoutKey: layoutKey,
-                screen: screen
+                screen: screen,
+                onApply: { [weak coordinator] in
+                    coordinator?.reflowWindows(for: displayID)
+                }
             )
             tileEditorWindows[displayID] = editorWindow
         }

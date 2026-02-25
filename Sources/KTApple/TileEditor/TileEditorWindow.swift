@@ -9,12 +9,13 @@ final class TileEditorWindow {
 
     var isVisible: Bool { panel != nil }
 
-    func show(tileManager: TileManager, layoutStore: LayoutStore, layoutKey: LayoutKey, screen: NSScreen? = nil) {
+    func show(tileManager: TileManager, layoutStore: LayoutStore, layoutKey: LayoutKey, screen: NSScreen? = nil, onApply: (() -> Void)? = nil) {
         let viewModel = TileEditorViewModel(
             tileManager: tileManager,
             layoutStore: layoutStore,
             layoutKey: layoutKey
         )
+        viewModel.onApply = onApply
 
         let contentView = TileEditorView(viewModel: viewModel) { [weak self] in
             self?.close()

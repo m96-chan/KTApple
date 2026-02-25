@@ -64,6 +64,9 @@ public final class TileEditorViewModel: ObservableObject {
     /// Whether redo is available.
     @Published public var canRedo: Bool = false
 
+    /// Called after apply() replaces the live tile tree (e.g. to reflow windows).
+    public var onApply: (() -> Void)?
+
     /// Undo history (snapshots of root tile tree).
     private var undoStack: [Tile] = []
     private var redoStack: [Tile] = []
@@ -215,6 +218,7 @@ public final class TileEditorViewModel: ObservableObject {
             layoutStore.save(tileManager: liveTileManager, for: layoutKey)
         }
         isDirty = false
+        onApply?()
     }
 
     /// Cancel editing and reset the working copy from the live state.

@@ -181,6 +181,26 @@ struct TileEditorViewModelTests {
         #expect(snapshot?.children.count == 2)
     }
 
+    @Test func applyCallsOnApplyCallback() {
+        let (vm, manager) = makeVM()
+        manager.split(manager.root, direction: .horizontal, ratio: 0.5)
+        let leaves = manager.leafTiles()
+        leaves[0].addWindow(id: 10)
+        leaves[1].addWindow(id: 20)
+
+        // Re-create VM so it picks up the split tree
+        let vm2 = TileEditorViewModel(tileManager: manager)
+        var callbackCalled = false
+        vm2.onApply = { callbackCalled = true }
+
+        // Resize a boundary in the editor
+        let workingLeaves = vm2.workingManager.leafTiles()
+        vm2.resizeTile(id: workingLeaves[0].id, newProportion: 0.7)
+        vm2.apply()
+
+        #expect(callbackCalled)
+    }
+
     @Test func cancelResetsWorkingCopy() {
         let (vm, _) = makeVM()
         let originalRootID = vm.workingManager.root.id

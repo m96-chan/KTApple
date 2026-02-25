@@ -259,6 +259,17 @@ public final class AppCoordinator: DisplayObserverDelegate {
         focusedWindowID = id
     }
 
+    /// Reflow all windows in a tile manager to match current tile frames.
+    public func reflowWindows(for displayID: UInt32) {
+        guard let manager = tileManagers[displayID] else { return }
+        for leaf in manager.leafTiles() {
+            for windowID in leaf.windowIDs {
+                let frame = manager.frame(for: leaf)
+                windowManager.setWindowFrame(id: windowID, frame: frame)
+            }
+        }
+    }
+
     /// Split a tile in a specific tile manager, with auto-save.
     @discardableResult
     public func splitTile(displayID: UInt32, tileID: UUID, direction: LayoutDirection, ratio: CGFloat = 0.5) -> Bool {
