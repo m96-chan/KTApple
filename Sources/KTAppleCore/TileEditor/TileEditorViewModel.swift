@@ -149,7 +149,7 @@ public final class TileEditorViewModel: ObservableObject {
 
         leftTile.proportion = newLeft
         rightTile.proportion = newRight
-        if !isDirty { isDirty = true } else { objectWillChange.send() }
+        isDirty = true
         return true
     }
 

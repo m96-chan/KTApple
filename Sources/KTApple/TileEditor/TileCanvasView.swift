@@ -34,7 +34,7 @@ struct TileCanvasView: View {
                         scaleX: scaleX,
                         scaleY: scaleY,
                         screenFrameOrigin: screenFrame.origin,
-                        onDrag: { screenPos in
+                        onDragEnd: { screenPos in
                             viewModel.resizeBoundaryAtScreenPosition(
                                 leftTileID: boundary.leftTileID,
                                 rightTileID: boundary.rightTileID,
