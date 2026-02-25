@@ -20,7 +20,6 @@ struct TileEditorView: View {
                     if viewModel.isDirty { viewModel.apply() }
                     onDismiss()
                 }
-                .padding(32)
 
                 toolbar
             }

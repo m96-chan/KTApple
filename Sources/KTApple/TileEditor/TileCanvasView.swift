@@ -19,6 +19,7 @@ struct TileCanvasView: View {
                         tileFrame: tileFrame,
                         scaleX: scaleX,
                         scaleY: scaleY,
+                        screenFrameOrigin: screenFrame.origin,
                         canDelete: canDelete,
                         onBackgroundTap: { onBackgroundTap?() },
                         onSplitH: { viewModel.splitTile(id: tileFrame.id, direction: .horizontal) },
@@ -32,7 +33,15 @@ struct TileCanvasView: View {
                         boundary: boundary,
                         scaleX: scaleX,
                         scaleY: scaleY,
-                        viewModel: viewModel
+                        screenFrameOrigin: screenFrame.origin,
+                        onDrag: { screenPos in
+                            viewModel.resizeBoundaryAtScreenPosition(
+                                leftTileID: boundary.leftTileID,
+                                rightTileID: boundary.rightTileID,
+                                axis: boundary.axis,
+                                screenPosition: screenPos
+                            )
+                        }
                     )
                 }
             }

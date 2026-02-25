@@ -42,7 +42,7 @@ public final class TileManager {
     }
 
     /// Compute the raw frame without gap adjustments.
-    private func rawFrame(for tile: Tile) -> CGRect {
+    public func rawFrame(for tile: Tile) -> CGRect {
         if tile === root { return screenFrame }
 
         guard let parent = tile.parent, let index = tile.siblingIndex else {

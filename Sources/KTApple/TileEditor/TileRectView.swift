@@ -6,6 +6,7 @@ struct TileRectView: View {
     let tileFrame: TileFrame
     let scaleX: CGFloat
     let scaleY: CGFloat
+    let screenFrameOrigin: CGPoint
     let canDelete: Bool
     let onBackgroundTap: () -> Void
     let onSplitH: () -> Void
@@ -14,8 +15,8 @@ struct TileRectView: View {
 
     var body: some View {
         let scaledFrame = CGRect(
-            x: tileFrame.frame.origin.x * scaleX,
-            y: tileFrame.frame.origin.y * scaleY,
+            x: (tileFrame.frame.origin.x - screenFrameOrigin.x) * scaleX,
+            y: (tileFrame.frame.origin.y - screenFrameOrigin.y) * scaleY,
             width: tileFrame.frame.width * scaleX,
             height: tileFrame.frame.height * scaleY
         )

@@ -2,8 +2,12 @@ import CoreGraphics
 import Foundation
 
 /// Boundary between two adjacent tiles in the editor canvas.
+///
+/// The `id` is deterministic (derived from the two tile IDs) so that
+/// SwiftUI's `ForEach` preserves view identity across re-renders,
+/// keeping active `DragGesture`s alive.
 public struct EditorTileBoundary: Identifiable, Sendable {
-    public let id: UUID
+    public var id: String { "\(leftTileID)_\(rightTileID)" }
     public let leftTileID: UUID
     public let rightTileID: UUID
     public let axis: LayoutDirection
@@ -17,7 +21,6 @@ public struct EditorTileBoundary: Identifiable, Sendable {
         position: CGFloat,
         rect: CGRect
     ) {
-        self.id = UUID()
         self.leftTileID = leftTileID
         self.rightTileID = rightTileID
         self.axis = axis
@@ -111,6 +114,42 @@ public final class TileEditorViewModel: ObservableObject {
         leftTile.proportion = newLeft
         rightTile.proportion = newRight
         isDirty = true
+        return true
+    }
+
+    /// Resize by dragging a boundary to an absolute screen position.
+    @discardableResult
+    public func resizeBoundaryAtScreenPosition(leftTileID: UUID, rightTileID: UUID, axis: LayoutDirection, screenPosition: CGFloat) -> Bool {
+        guard let leftTile = findTile(id: leftTileID, in: workingManager.root),
+              let rightTile = findTile(id: rightTileID, in: workingManager.root),
+              let parent = leftTile.parent,
+              rightTile.parent === parent else { return false }
+
+        let leftFrame = workingManager.rawFrame(for: leftTile)
+        let rightFrame = workingManager.rawFrame(for: rightTile)
+
+        let combinedStart: CGFloat
+        let combinedEnd: CGFloat
+        switch axis {
+        case .horizontal:
+            combinedStart = leftFrame.minX
+            combinedEnd = rightFrame.maxX
+        case .vertical:
+            combinedStart = leftFrame.minY
+            combinedEnd = rightFrame.maxY
+        }
+
+        let combinedSize = combinedEnd - combinedStart
+        guard combinedSize > 0 else { return false }
+
+        let fraction = (screenPosition - combinedStart) / combinedSize
+        let total = leftTile.proportion + rightTile.proportion
+        let newLeft = max(TileManager.minProportion, min(total - TileManager.minProportion, fraction * total))
+        let newRight = total - newLeft
+
+        leftTile.proportion = newLeft
+        rightTile.proportion = newRight
+        if !isDirty { isDirty = true } else { objectWillChange.send() }
         return true
     }
 
