@@ -4,6 +4,10 @@
 <dict>
     <key>CFBundleName</key>
     <string>KTApple</string>
+    <key>CFBundleExecutable</key>
+    <string>KTApple</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
     <key>CFBundleIdentifier</key>
     <string>com.m96chan.KTApple</string>
     <key>CFBundleVersion</key>

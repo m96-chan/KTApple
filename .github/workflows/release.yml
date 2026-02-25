@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version number (e.g. 0.2.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            # Strip leading 'v' from tag
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Using version: $VERSION"
+
+      - name: Run tests
+        run: swift test
+
+      - name: Build app and create DMG
+        run: ./scripts/bundle-app.sh --version "${{ steps.version.outputs.version }}" --dmg
+
+      - name: Verify app bundle
+        run: |
+          echo "==> Bundle contents:"
+          find build/KTApple.app -type f
+          echo ""
+          echo "==> Info.plist:"
+          plutil -p build/KTApple.app/Contents/Info.plist
+          echo ""
+          echo "==> Executable type:"
+          file build/KTApple.app/Contents/MacOS/KTApple
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', steps.version.outputs.version) || github.ref_name }}
+          name: KTApple ${{ steps.version.outputs.version }}
+          files: build/KTApple-${{ steps.version.outputs.version }}-arm64.dmg
