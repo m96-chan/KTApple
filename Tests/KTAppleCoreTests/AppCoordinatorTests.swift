@@ -542,6 +542,22 @@ struct AppCoordinatorTests {
         #expect(coordinator.tileManagers[2]?.gap == 16)
     }
 
+    @Test func setGapSizeReflowsWindows() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let (coordinator, _, _, _, accessibilityProvider, _) = makeCoordinator(displays: [display])
+        coordinator.start()
+
+        let manager = coordinator.tileManagers[1]!
+        let (left, _) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
+        left.addWindow(id: 10)
+
+        accessibilityProvider.operations.removeAll()
+        coordinator.setGapSize(20)
+
+        // Window should be repositioned with the new gap
+        #expect(!accessibilityProvider.operations.isEmpty)
+    }
+
     // MARK: - Stop
 
     @Test func stopCleansUp() {

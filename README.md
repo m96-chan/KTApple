@@ -124,10 +124,10 @@ KTApple
 
 ## Installation
 
-### Homebrew (planned)
+### Homebrew
 
 ```sh
-brew tap m96-chan/tap
+brew tap m96-chan/homebrew-tap
 brew install --cask --no-quarantine ktapple
 ```
 
@@ -147,7 +147,15 @@ brew install --cask --no-quarantine ktapple
 
 - Distributed outside the Mac App Store (App Sandbox is incompatible with Accessibility API)
 - Ad-hoc signed (no Developer ID / notarization)
-- Homebrew tap: `m96-chan/tap` with `--no-quarantine` cask
+- Homebrew tap: `m96-chan/homebrew-tap` with `--no-quarantine` cask
+
+## Documentation
+
+See the [docs/](docs/) directory for detailed guides:
+
+- [Getting Started](docs/getting-started.md) -- Installation, setup, and first steps
+- [Keyboard Shortcuts](docs/keyboard-shortcuts.md) -- Full shortcut reference
+- [Architecture](docs/architecture.md) -- Internals for contributors
 
 ## License
 

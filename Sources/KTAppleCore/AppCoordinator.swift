@@ -34,8 +34,9 @@ public final class AppCoordinator: DisplayObserverDelegate {
     /// Gap size applied to all tile managers.
     public var gapSize: CGFloat = 0 {
         didSet {
-            for manager in tileManagers.values {
+            for (displayID, manager) in tileManagers {
                 manager.gap = gapSize
+                reflowWindows(for: displayID)
             }
             onGapSizeChanged?(gapSize)
         }
