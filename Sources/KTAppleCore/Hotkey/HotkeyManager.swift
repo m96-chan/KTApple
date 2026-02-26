@@ -77,12 +77,11 @@ public final class HotkeyManager {
         static let upArrow: UInt32    = 126
     }
 
-    /// Register the default set of hotkey bindings.
-    public func registerDefaults() {
+    /// The built-in default bindings for all 13 actions.
+    public static let defaultBindings: [HotkeyBinding] = {
         let ctrlOpt: KeyModifier = [.control, .option]
         let ctrlOptShift: KeyModifier = [.control, .option, .shift]
-
-        let defaults: [HotkeyBinding] = [
+        return [
             HotkeyBinding(action: .openEditor, keyCode: KeyCode.t, modifiers: ctrlOpt),
             HotkeyBinding(action: .focusLeft, keyCode: KeyCode.leftArrow, modifiers: ctrlOpt),
             HotkeyBinding(action: .focusRight, keyCode: KeyCode.rightArrow, modifiers: ctrlOpt),
@@ -97,10 +96,18 @@ public final class HotkeyManager {
             HotkeyBinding(action: .expandTile, keyCode: KeyCode.equal, modifiers: ctrlOpt),
             HotkeyBinding(action: .shrinkTile, keyCode: KeyCode.minus, modifiers: ctrlOpt),
         ]
+    }()
 
-        Self.log.info("registerDefaults: registering \(defaults.count) bindings")
-        for binding in defaults {
+    /// Register an array of bindings (used to apply merged default+custom bindings).
+    public func registerAll(_ bindings: [HotkeyBinding]) {
+        Self.log.info("registerAll: registering \(bindings.count) bindings")
+        for binding in bindings {
             register(binding)
         }
+    }
+
+    /// Register the default set of hotkey bindings.
+    public func registerDefaults() {
+        registerAll(Self.defaultBindings)
     }
 }

@@ -1,9 +1,12 @@
+import KTAppleCore
 import SwiftUI
 
 /// SwiftUI view for the Preferences window.
 struct PreferencesView: View {
     @Binding var gapSize: Double
+    @Binding var bindings: [HotkeyAction: HotkeyBinding]
     var onGapSizeChanged: (Double) -> Void
+    var onBindingChanged: (HotkeyBinding) -> Void
 
     var body: some View {
         Form {
@@ -23,28 +26,38 @@ struct PreferencesView: View {
             }
 
             Section("Keyboard Shortcuts") {
-                VStack(alignment: .leading, spacing: 6) {
-                    shortcutRow("Open Editor", "Ctrl + Opt + T")
-                    shortcutRow("Focus", "Ctrl + Opt + Arrow")
-                    shortcutRow("Move Window", "Ctrl + Opt + Shift + Arrow")
-                    shortcutRow("Expand / Shrink", "Ctrl + Opt + = / -")
-                    shortcutRow("Toggle Floating", "Ctrl + Opt + F")
-                    shortcutRow("Toggle Maximize", "Ctrl + Opt + M")
-                }
+                shortcutRow(.openEditor, label: "Open Editor")
+                Divider().padding(.vertical, 2)
+                shortcutRow(.focusLeft,  label: "Focus Left")
+                shortcutRow(.focusRight, label: "Focus Right")
+                shortcutRow(.focusUp,    label: "Focus Up")
+                shortcutRow(.focusDown,  label: "Focus Down")
+                Divider().padding(.vertical, 2)
+                shortcutRow(.moveLeft,   label: "Move Left")
+                shortcutRow(.moveRight,  label: "Move Right")
+                shortcutRow(.moveUp,     label: "Move Up")
+                shortcutRow(.moveDown,   label: "Move Down")
+                Divider().padding(.vertical, 2)
+                shortcutRow(.expandTile,      label: "Expand")
+                shortcutRow(.shrinkTile,      label: "Shrink")
+                shortcutRow(.toggleFloating,  label: "Toggle Floating")
+                shortcutRow(.toggleMaximize,  label: "Toggle Maximize")
             }
         }
         .formStyle(.grouped)
-        .frame(width: 400, height: 320)
+        .frame(width: 400, height: 520)
     }
 
-    private func shortcutRow(_ action: String, _ shortcut: String) -> some View {
+    @ViewBuilder
+    private func shortcutRow(_ action: HotkeyAction, label: String) -> some View {
         HStack {
-            Text(action)
-                .frame(width: 150, alignment: .leading)
+            Text(label)
+                .frame(width: 130, alignment: .leading)
             Spacer()
-            Text(shortcut)
-                .foregroundStyle(.secondary)
-                .font(.system(.body, design: .monospaced))
+            if let binding = bindings[action] {
+                ShortcutRecorderView(binding: binding, onRecorded: onBindingChanged)
+                    .frame(width: 110, height: 24)
+            }
         }
     }
 }

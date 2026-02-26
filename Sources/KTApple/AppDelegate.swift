@@ -38,7 +38,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ).first!.appendingPathComponent("KTApple")
         try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
         let layoutPath = supportDir.appendingPathComponent("layouts.json").path
+        let hotkeyPath = supportDir.appendingPathComponent("hotkeys.json").path
 
+        let hotkeyStore = HotkeyStore(provider: storageProvider, filePath: hotkeyPath)
         let windowLifecycleProvider = LiveWindowLifecycleProvider(accessibilityProvider: accessibilityProvider)
 
         let coordinator = AppCoordinator(
@@ -48,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             accessibilityAPIProvider: accessibilityProvider,
             storageProvider: storageProvider,
             layoutFilePath: layoutPath,
+            hotkeyStore: hotkeyStore,
             spaceProvider: spaceProvider,
             windowLifecycleProvider: windowLifecycleProvider
         )
@@ -241,8 +244,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         preferencesWindow?.show(
             gapSize: Double(coordinator?.gapSize ?? 8),
+            bindings: coordinator?.activeHotkeyBindings ?? [:],
             onGapSizeChanged: { [weak self] size in
                 self?.coordinator?.setGapSize(CGFloat(size))
+            },
+            onBindingChanged: { [weak self] binding in
+                self?.coordinator?.updateHotkeyBinding(binding)
             }
         )
     }

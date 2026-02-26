@@ -1,7 +1,7 @@
 import Foundation
 
 /// Actions that can be triggered by keyboard shortcuts.
-public enum HotkeyAction: String, CaseIterable, Sendable, Hashable {
+public enum HotkeyAction: String, CaseIterable, Codable, Sendable, Hashable {
     case openEditor
     case focusLeft
     case focusRight

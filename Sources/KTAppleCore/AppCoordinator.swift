@@ -14,6 +14,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
     private let hotkeyManager: HotkeyManager
     private let windowManager: WindowManager
     public let layoutStore: LayoutStore
+    public let hotkeyStore: HotkeyStore
     private let spaceProvider: SpaceProvider?
     private let windowLifecycleProvider: WindowLifecycleProvider?
 
@@ -53,6 +54,9 @@ public final class AppCoordinator: DisplayObserverDelegate {
     /// Whether accessibility permission was granted.
     public private(set) var accessibilityGranted = false
 
+    /// Currently active hotkey bindings (default or user-customised).
+    public var activeHotkeyBindings: [HotkeyAction: HotkeyBinding] { hotkeyManager.activeBindings }
+
     /// Callback for actions that require the UI layer (e.g. opening the tile editor).
     public var onOpenEditor: (() -> Void)?
 
@@ -66,6 +70,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
         accessibilityAPIProvider: AccessibilityProvider,
         storageProvider: StorageProvider,
         layoutFilePath: String = "layouts.json",
+        hotkeyStore: HotkeyStore? = nil,
         spaceProvider: SpaceProvider? = nil,
         windowLifecycleProvider: WindowLifecycleProvider? = nil
     ) {
@@ -74,6 +79,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
         self.hotkeyManager = HotkeyManager(provider: hotkeyProvider)
         self.windowManager = WindowManager(provider: accessibilityAPIProvider)
         self.layoutStore = LayoutStore(provider: storageProvider, filePath: layoutFilePath)
+        self.hotkeyStore = hotkeyStore ?? HotkeyStore(provider: storageProvider, filePath: "hotkeys.json")
         self.spaceProvider = spaceProvider
         self.windowLifecycleProvider = windowLifecycleProvider
 
@@ -108,7 +114,11 @@ public final class AppCoordinator: DisplayObserverDelegate {
             assignWindowsToTiles(windows)
         }
 
-        hotkeyManager.registerDefaults()
+        hotkeyStore.loadFromDisk()
+        let mergedBindings = HotkeyManager.defaultBindings.map {
+            hotkeyStore.customBinding(for: $0.action) ?? $0
+        }
+        hotkeyManager.registerAll(mergedBindings)
         displayObserver.startObserving()
         spaceProvider?.startObserving { [weak self] in
             self?.handleSpaceChanged()
@@ -265,6 +275,12 @@ public final class AppCoordinator: DisplayObserverDelegate {
     }
 
     // MARK: - Public Operations
+
+    /// Update a hotkey binding at runtime and persist it.
+    public func updateHotkeyBinding(_ binding: HotkeyBinding) {
+        hotkeyManager.update(binding)
+        hotkeyStore.save(binding)
+    }
 
     /// Set the gap size for all tile managers.
     public func setGapSize(_ size: CGFloat) {

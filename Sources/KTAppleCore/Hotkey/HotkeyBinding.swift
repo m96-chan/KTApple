@@ -16,3 +16,5 @@ public struct HotkeyBinding: Sendable {
         self.modifiers = modifiers
     }
 }
+
+extension HotkeyBinding: Codable {}
