@@ -8,6 +8,7 @@ struct TileRectView: View {
     let scaleY: CGFloat
     let screenFrameOrigin: CGPoint
     let canDelete: Bool
+    let thumbnail: NSImage?
     let onTap: () -> Void
     let onSplitH: () -> Void
     let onSplitV: () -> Void
@@ -31,6 +32,16 @@ struct TileRectView: View {
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 4))
                 .onTapGesture { onTap() }
+
+            // App icon thumbnail for the first assigned window
+            if let thumbnail {
+                Image(nsImage: thumbnail)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .opacity(0.25)
+                    .padding(scaledFrame.width > 80 ? 16 : 8)
+                    .allowsHitTesting(false)
+            }
 
             VStack(spacing: 6) {
                 // Window count indicator

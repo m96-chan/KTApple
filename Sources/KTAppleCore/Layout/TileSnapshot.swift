@@ -32,6 +32,20 @@ public struct TileSnapshot: Codable, Sendable, Equatable {
         self.children = tile.children.map { TileSnapshot(tile: $0) }
     }
 
+    /// Returns a copy of this snapshot with all windowIDs cleared recursively.
+    ///
+    /// Used when saving layout profiles — window assignments are ephemeral
+    /// and should not be stored as part of a reusable profile.
+    public func clearingWindowIDs() -> TileSnapshot {
+        TileSnapshot(
+            id: id,
+            proportion: proportion,
+            layoutDirection: layoutDirection,
+            windowIDs: [],
+            children: children.map { $0.clearingWindowIDs() }
+        )
+    }
+
     /// Convert this snapshot back to a live Tile tree.
     public func toTile() -> Tile {
         let tile = Tile(id: id, proportion: proportion, layoutDirection: layoutDirection)

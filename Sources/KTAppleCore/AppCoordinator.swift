@@ -15,6 +15,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
     private let windowManager: WindowManager
     public let layoutStore: LayoutStore
     public let hotkeyStore: HotkeyStore
+    public let profileStore: ProfileStore
     private let spaceProvider: SpaceProvider?
     private let windowLifecycleProvider: WindowLifecycleProvider?
 
@@ -57,6 +58,21 @@ public final class AppCoordinator: DisplayObserverDelegate {
     /// Currently active hotkey bindings (default or user-customised).
     public var activeHotkeyBindings: [HotkeyAction: HotkeyBinding] { hotkeyManager.activeBindings }
 
+    /// All saved layout profiles in order.
+    public var profiles: [LayoutProfile] { profileStore.profiles }
+
+    /// The name of the currently active profile, or nil if none has been switched to.
+    public private(set) var activeProfileName: String?
+
+    /// ID of the currently active profile (for stable rename tracking).
+    private var activeProfileID: UUID?
+
+    /// Called when profiles change (add/rename/delete), so the UI layer can rebuild menus.
+    public var onProfilesChanged: (() -> Void)?
+
+    /// Called when the active profile changes (switch, rename of active profile).
+    public var onActiveProfileChanged: ((String?) -> Void)?
+
     /// Callback for actions that require the UI layer (e.g. opening the tile editor).
     public var onOpenEditor: (() -> Void)?
 
@@ -71,6 +87,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
         storageProvider: StorageProvider,
         layoutFilePath: String = "layouts.json",
         hotkeyStore: HotkeyStore? = nil,
+        profileFilePath: String = "profiles.json",
         spaceProvider: SpaceProvider? = nil,
         windowLifecycleProvider: WindowLifecycleProvider? = nil
     ) {
@@ -80,6 +97,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
         self.windowManager = WindowManager(provider: accessibilityAPIProvider)
         self.layoutStore = LayoutStore(provider: storageProvider, filePath: layoutFilePath)
         self.hotkeyStore = hotkeyStore ?? HotkeyStore(provider: storageProvider, filePath: "hotkeys.json")
+        self.profileStore = ProfileStore(provider: storageProvider, filePath: profileFilePath)
         self.spaceProvider = spaceProvider
         self.windowLifecycleProvider = windowLifecycleProvider
 
@@ -119,6 +137,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
             hotkeyStore.customBinding(for: $0.action) ?? $0
         }
         hotkeyManager.registerAll(mergedBindings)
+        profileStore.loadFromDisk()
         displayObserver.startObserving()
         spaceProvider?.startObserving { [weak self] in
             self?.handleSpaceChanged()
@@ -160,6 +179,13 @@ public final class AppCoordinator: DisplayObserverDelegate {
             return
         }
 
+        // Profile switch actions don't require a focused window
+        if let index = action.profileIndex {
+            Self.log.debug("handleAction: switchProfile index=\(index)")
+            switchProfile(index: index)
+            return
+        }
+
         guard let windowID = focusedWindowID else { return }
         Self.log.debug("handleAction: \(String(describing: action)) windowID=\(windowID)")
 
@@ -188,7 +214,14 @@ public final class AppCoordinator: DisplayObserverDelegate {
             toggleFloating(windowID: windowID)
         case .toggleMaximize:
             toggleMaximize(windowID: windowID)
-        case .openEditor:
+        case .cycleWindowNext:
+            cycleWindow(windowID: windowID, forward: true)
+        case .cycleWindowPrev:
+            cycleWindow(windowID: windowID, forward: false)
+        case .openEditor,
+             .switchProfile1, .switchProfile2, .switchProfile3,
+             .switchProfile4, .switchProfile5, .switchProfile6,
+             .switchProfile7, .switchProfile8, .switchProfile9:
             break // handled above
         }
     }
@@ -276,6 +309,101 @@ public final class AppCoordinator: DisplayObserverDelegate {
 
     // MARK: - Public Operations
 
+    // MARK: - Layout Import / Export
+
+    /// Encode all current layouts as JSON for export to a file.
+    public func exportLayout() -> Data? {
+        try? layoutStore.exportJSON()
+    }
+
+    /// Import layouts from JSON data, apply to active tile managers, and reflow windows.
+    /// Returns false if the data cannot be decoded.
+    @discardableResult
+    public func importLayout(_ data: Data) -> Bool {
+        do {
+            try layoutStore.importJSON(data)
+        } catch {
+            Self.log.error("importLayout: decode failed: \(error.localizedDescription)")
+            return false
+        }
+        for (displayID, manager) in tileManagers {
+            let key = layoutKey(for: displayID)
+            layoutStore.apply(to: manager, for: key)
+            reflowWindows(for: displayID)
+        }
+        Self.log.info("importLayout: applied to \(self.tileManagers.count) display(s)")
+        return true
+    }
+
+    // MARK: - Profile Operations
+
+    /// Capture the current tile layout for all displays and save it as a named profile.
+    @discardableResult
+    public func saveCurrentAsProfile(name: String) -> LayoutProfile {
+        var snapshots: [String: TileSnapshot] = [:]
+        for (displayID, manager) in tileManagers {
+            // Strip window IDs — profiles store layout structure, not window assignments
+            snapshots["\(displayID)"] = TileSnapshot(tile: manager.root).clearingWindowIDs()
+        }
+        let profile = LayoutProfile(name: name, displaySnapshots: snapshots)
+        profileStore.addProfile(profile)
+        Self.log.info("saveCurrentAsProfile: saved '\(name)'")
+        onProfilesChanged?()
+        return profile
+    }
+
+    /// Overwrite an existing profile's snapshots with the current tile layout.
+    public func updateProfile(id: UUID) {
+        var snapshots: [String: TileSnapshot] = [:]
+        for (displayID, manager) in tileManagers {
+            snapshots["\(displayID)"] = TileSnapshot(tile: manager.root).clearingWindowIDs()
+        }
+        profileStore.updateProfile(id: id, snapshots: snapshots)
+        onProfilesChanged?()
+    }
+
+    /// Switch to a profile by 0-based index. Returns false if no profile exists at that index.
+    @discardableResult
+    public func switchProfile(index: Int) -> Bool {
+        guard let profile = profileStore.profile(at: index) else {
+            Self.log.info("switchProfile: no profile at index \(index)")
+            return false
+        }
+        Self.log.info("switchProfile: '\(profile.name)' (index=\(index))")
+        applyProfile(profile)
+        activeProfileID = profile.id
+        activeProfileName = profile.name
+        onActiveProfileChanged?(profile.name)
+        return true
+    }
+
+    /// Switch to a profile by ID.
+    public func switchProfile(id: UUID) {
+        guard let profile = profileStore.profiles.first(where: { $0.id == id }) else { return }
+        Self.log.info("switchProfile: '\(profile.name)' (id=\(id))")
+        applyProfile(profile)
+        activeProfileID = profile.id
+        activeProfileName = profile.name
+        onActiveProfileChanged?(profile.name)
+    }
+
+    /// Rename a saved profile.
+    public func renameProfile(id: UUID, name: String) {
+        profileStore.renameProfile(id: id, name: name)
+        // Keep activeProfileName in sync if the active profile was renamed
+        if activeProfileID == id {
+            activeProfileName = name
+            onActiveProfileChanged?(name)
+        }
+        onProfilesChanged?()
+    }
+
+    /// Delete a saved profile.
+    public func deleteProfile(id: UUID) {
+        profileStore.deleteProfile(id: id)
+        onProfilesChanged?()
+    }
+
     /// Update a hotkey binding at runtime and persist it.
     public func updateHotkeyBinding(_ binding: HotkeyBinding) {
         hotkeyManager.update(binding)
@@ -357,6 +485,30 @@ public final class AppCoordinator: DisplayObserverDelegate {
         guard let spaceProvider else { return 0 }
         let ids = spaceProvider.spaceIDs(for: displayID)
         return ids.firstIndex(of: spaceID) ?? 0
+    }
+
+    private func applyProfile(_ profile: LayoutProfile) {
+        for (displayID, manager) in tileManagers {
+            guard let snapshot = profile.displaySnapshots["\(displayID)"] else {
+                Self.log.debug("applyProfile: no snapshot for displayID=\(displayID) in '\(profile.name)'")
+                continue
+            }
+            // Collect existing window IDs before replacing the tile tree
+            let existingWindowIDs = manager.leafTiles().flatMap { Array($0.windowIDs) }
+
+            let newRoot = snapshot.toTile() // snapshot has no windowIDs (cleared on save)
+            manager.replaceRoot(newRoot)
+
+            // Re-seat existing windows into new leaf tiles in order
+            let newLeaves = manager.leafTiles()
+            for (i, windowID) in existingWindowIDs.enumerated() where i < newLeaves.count {
+                newLeaves[i].addWindow(id: windowID)
+            }
+
+            let key = layoutKey(for: displayID)
+            layoutStore.save(tileManager: manager, for: key)
+            reflowWindows(for: displayID)
+        }
     }
 
     private func handleWindowCreated(_ window: WindowInfo) {
@@ -446,6 +598,26 @@ public final class AppCoordinator: DisplayObserverDelegate {
                 }
             }
         }
+    }
+
+    private func cycleWindow(windowID: UInt32, forward: Bool) {
+        guard let (manager, currentTile) = findTileContaining(windowID: windowID) else { return }
+        let leaves = manager.leafTiles()
+        guard leaves.count > 1,
+              let currentIndex = leaves.firstIndex(where: { $0.id == currentTile.id }) else { return }
+
+        let nextIndex = forward
+            ? (currentIndex + 1) % leaves.count
+            : (currentIndex - 1 + leaves.count) % leaves.count
+        let targetTile = leaves[nextIndex]
+
+        Self.log.debug("cycleWindow: windowID=\(windowID) \(currentIndex) → \(nextIndex)")
+        windowManager.saveOriginalFrame(id: windowID)
+        currentTile.removeWindow(id: windowID)
+        targetTile.addWindow(id: windowID)
+
+        let frame = manager.frame(for: targetTile)
+        windowManager.setWindowFrame(id: windowID, frame: frame)
     }
 
     private func toggleFloating(windowID: UInt32) {

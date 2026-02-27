@@ -35,6 +35,7 @@ struct TileCanvasView: View {
     var onBackgroundTap: (() -> Void)?
 
     @StateObject private var dragState = CanvasDragState()
+    @State private var thumbnails: [UInt32: NSImage] = [:]
 
     var body: some View {
         GeometryReader { geo in
@@ -46,12 +47,14 @@ struct TileCanvasView: View {
             ZStack {
                 ForEach(viewModel.tileFrames()) { tileFrame in
                     let canDelete = viewModel.tile(withID: tileFrame.id)?.parent != nil
+                    let thumbnail = tileFrame.windowIDs.compactMap { thumbnails[$0] }.first
                     TileRectView(
                         tileFrame: tileFrame,
                         scaleX: scaleX,
                         scaleY: scaleY,
                         screenFrameOrigin: screenFrame.origin,
                         canDelete: canDelete,
+                        thumbnail: thumbnail,
                         onTap: { onBackgroundTap?() },
                         onSplitH: { viewModel.splitTile(id: tileFrame.id, direction: .horizontal) },
                         onSplitV: { viewModel.splitTile(id: tileFrame.id, direction: .vertical) },
@@ -84,6 +87,7 @@ struct TileCanvasView: View {
                 }
             }
             .coordinateSpace(name: "tileCanvas")
+            .onAppear { thumbnails = appIcons(for: viewModel.tileFrames()) }
             .background(
                 // Invisible helper to install NSEvent monitors
                 // and track the canvas frame in screen coordinates.
@@ -97,6 +101,29 @@ struct TileCanvasView: View {
             )
         }
     }
+}
+
+// MARK: - App icon lookup
+
+/// Build a windowID → app-icon mapping for tiles that have assigned windows.
+/// Uses CGWindowListCopyWindowInfo to resolve each windowID's owning process,
+/// then NSRunningApplication.icon for the icon. Requires no extra permissions.
+private func appIcons(for tileFrames: [TileFrame]) -> [UInt32: NSImage] {
+    var result: [UInt32: NSImage] = [:]
+    for tileFrame in tileFrames {
+        for windowID in tileFrame.windowIDs where result[windowID] == nil {
+            guard
+                let infoList = CGWindowListCopyWindowInfo(
+                    [.optionIncludingWindow], CGWindowID(windowID)
+                ) as? [[String: Any]],
+                let pid = infoList.first?[kCGWindowOwnerPID as String] as? Int32,
+                let app = NSRunningApplication(processIdentifier: pid_t(pid)),
+                let icon = app.icon
+            else { continue }
+            result[windowID] = icon
+        }
+    }
+    return result
 }
 
 // MARK: - NSEvent-based drag handling

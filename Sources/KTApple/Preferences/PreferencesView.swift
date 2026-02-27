@@ -5,8 +5,11 @@ import SwiftUI
 struct PreferencesView: View {
     @Binding var gapSize: Double
     @Binding var bindings: [HotkeyAction: HotkeyBinding]
+    @Binding var profiles: [LayoutProfile]
     var onGapSizeChanged: (Double) -> Void
     var onBindingChanged: (HotkeyBinding) -> Void
+    var onProfileRenamed: (UUID, String) -> Void
+    var onProfileDeleted: (UUID) -> Void
 
     var body: some View {
         Form {
@@ -25,6 +28,14 @@ struct PreferencesView: View {
                 }
             }
 
+            Section("Layout Profiles") {
+                ProfilesView(
+                    profiles: profiles,
+                    onProfileRenamed: onProfileRenamed,
+                    onProfileDeleted: onProfileDeleted
+                )
+            }
+
             Section("Keyboard Shortcuts") {
                 shortcutRow(.openEditor, label: "Open Editor")
                 Divider().padding(.vertical, 2)
@@ -38,6 +49,9 @@ struct PreferencesView: View {
                 shortcutRow(.moveUp,     label: "Move Up")
                 shortcutRow(.moveDown,   label: "Move Down")
                 Divider().padding(.vertical, 2)
+                shortcutRow(.cycleWindowNext, label: "Cycle Next")
+                shortcutRow(.cycleWindowPrev, label: "Cycle Prev")
+                Divider().padding(.vertical, 2)
                 shortcutRow(.expandTile,      label: "Expand")
                 shortcutRow(.shrinkTile,      label: "Shrink")
                 shortcutRow(.toggleFloating,  label: "Toggle Floating")
@@ -45,7 +59,7 @@ struct PreferencesView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 400, height: 520)
+        .frame(width: 400, height: 640)
     }
 
     @ViewBuilder

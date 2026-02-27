@@ -75,6 +75,17 @@ public final class HotkeyManager {
         static let rightArrow: UInt32 = 124
         static let downArrow: UInt32  = 125
         static let upArrow: UInt32    = 126
+        // Digit row (kVK_ANSI_1 … kVK_ANSI_9)
+        static let one: UInt32   = 18
+        static let two: UInt32   = 19
+        static let three: UInt32 = 20
+        static let four: UInt32  = 21
+        static let five: UInt32  = 23  // intentionally not 22
+        static let six: UInt32   = 22
+        static let seven: UInt32 = 26
+        static let eight: UInt32 = 28
+        static let nine: UInt32  = 25
+        static let tab: UInt32   = 48
     }
 
     /// The built-in default bindings for all 13 actions.
@@ -95,6 +106,19 @@ public final class HotkeyManager {
             HotkeyBinding(action: .toggleMaximize, keyCode: KeyCode.m, modifiers: ctrlOpt),
             HotkeyBinding(action: .expandTile, keyCode: KeyCode.equal, modifiers: ctrlOpt),
             HotkeyBinding(action: .shrinkTile, keyCode: KeyCode.minus, modifiers: ctrlOpt),
+            // Layout profile switching (⌃⌥1 … ⌃⌥9)
+            HotkeyBinding(action: .switchProfile1, keyCode: KeyCode.one,   modifiers: ctrlOpt),
+            HotkeyBinding(action: .switchProfile2, keyCode: KeyCode.two,   modifiers: ctrlOpt),
+            HotkeyBinding(action: .switchProfile3, keyCode: KeyCode.three, modifiers: ctrlOpt),
+            HotkeyBinding(action: .switchProfile4, keyCode: KeyCode.four,  modifiers: ctrlOpt),
+            HotkeyBinding(action: .switchProfile5, keyCode: KeyCode.five,  modifiers: ctrlOpt),
+            HotkeyBinding(action: .switchProfile6, keyCode: KeyCode.six,   modifiers: ctrlOpt),
+            HotkeyBinding(action: .switchProfile7, keyCode: KeyCode.seven, modifiers: ctrlOpt),
+            HotkeyBinding(action: .switchProfile8, keyCode: KeyCode.eight, modifiers: ctrlOpt),
+            HotkeyBinding(action: .switchProfile9, keyCode: KeyCode.nine,  modifiers: ctrlOpt),
+            // Cycle window through tiles
+            HotkeyBinding(action: .cycleWindowNext, keyCode: KeyCode.tab, modifiers: ctrlOpt),
+            HotkeyBinding(action: .cycleWindowPrev, keyCode: KeyCode.tab, modifiers: [.control, .option, .shift]),
         ]
     }()
 

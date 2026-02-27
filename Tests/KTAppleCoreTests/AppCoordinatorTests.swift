@@ -228,7 +228,8 @@ struct AppCoordinatorTests {
 
         coordinator.start()
 
-        #expect(hotkeyProvider.registeredBindings.count == 13)
+        // 13 original actions + 9 profile switch actions
+        #expect(hotkeyProvider.registeredBindings.count == 24)
     }
 
     @Test func startAssignsWindows() {
@@ -570,7 +571,8 @@ struct AppCoordinatorTests {
 
         #expect(!coordinator.isRunning)
         #expect(!displayProvider.isObserving)
-        #expect(hotkeyProvider.unregisteredActions.count == 13)
+        // 13 original actions + 9 profile switch actions
+        #expect(hotkeyProvider.unregisteredActions.count == 24)
     }
 
     // MARK: - Spaces Support

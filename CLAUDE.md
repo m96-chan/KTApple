@@ -19,6 +19,14 @@ swift build -c release        # Release build
 ./scripts/bundle-app.sh       # Create .app bundle
 ```
 
+## Communication Policy
+
+### GitHub Issues — English only
+
+All GitHub issue titles, bodies, and comments **must be written in English**.
+This applies to bug reports, feature requests, and any discussion on existing issues.
+Do not write in Japanese or any other language, even if the conversation with the user is in Japanese.
+
 ## Key Design Decisions
 
 - No App Sandbox (incompatible with Accessibility API)

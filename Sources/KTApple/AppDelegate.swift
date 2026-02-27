@@ -39,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
         let layoutPath = supportDir.appendingPathComponent("layouts.json").path
         let hotkeyPath = supportDir.appendingPathComponent("hotkeys.json").path
+        let profilePath = supportDir.appendingPathComponent("profiles.json").path
 
         let hotkeyStore = HotkeyStore(provider: storageProvider, filePath: hotkeyPath)
         let windowLifecycleProvider = LiveWindowLifecycleProvider(accessibilityProvider: accessibilityProvider)
@@ -51,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             storageProvider: storageProvider,
             layoutFilePath: layoutPath,
             hotkeyStore: hotkeyStore,
+            profileFilePath: profilePath,
             spaceProvider: spaceProvider,
             windowLifecycleProvider: windowLifecycleProvider
         )
@@ -80,6 +82,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             defaults.set(Double(size), forKey: "gapSize")
         }
 
+        coordinator.onProfilesChanged = { [weak self] in
+            Task { @MainActor in
+                guard let self, let coordinator = self.coordinator else { return }
+                let profiles = coordinator.profiles
+                self.statusBarController?.rebuildProfilesMenu(profiles)
+                self.preferencesWindow?.updateProfiles(profiles)
+            }
+        }
+
+        coordinator.onActiveProfileChanged = { [weak self] name in
+            Task { @MainActor in
+                self?.statusBarController?.setActiveProfile(name: name)
+            }
+        }
+
         coordinator.start()
         self.coordinator = coordinator
         self.hotkeyProvider = hotkeyProvider
@@ -105,8 +122,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onOpenPreferences: { [weak self] in
                 self?.openPreferences()
+            },
+            onSwitchProfile: { [weak self] index in
+                self?.coordinator?.switchProfile(index: index)
+            },
+            onSaveCurrentProfile: { [weak self] in
+                self?.promptSaveProfile()
+            },
+            onExportLayout: { [weak self] in
+                self?.exportLayouts()
+            },
+            onImportLayout: { [weak self] in
+                self?.importLayouts()
             }
         )
+        // Populate initial profile list in the status bar menu
+        statusBarController?.rebuildProfilesMenu(coordinator.profiles)
     }
 
     // MARK: - Drag & Drop
@@ -245,13 +276,82 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         preferencesWindow?.show(
             gapSize: Double(coordinator?.gapSize ?? 8),
             bindings: coordinator?.activeHotkeyBindings ?? [:],
+            profiles: coordinator?.profiles ?? [],
             onGapSizeChanged: { [weak self] size in
                 self?.coordinator?.setGapSize(CGFloat(size))
             },
             onBindingChanged: { [weak self] binding in
                 self?.coordinator?.updateHotkeyBinding(binding)
+            },
+            onProfileRenamed: { [weak self] id, name in
+                self?.coordinator?.renameProfile(id: id, name: name)
+            },
+            onProfileDeleted: { [weak self] id in
+                self?.coordinator?.deleteProfile(id: id)
             }
         )
+    }
+
+    private func exportLayouts() {
+        guard let data = coordinator?.exportLayout() else { return }
+        let panel = NSSavePanel()
+        panel.title = "Export Layout"
+        panel.nameFieldStringValue = "layout.json"
+        panel.allowedContentTypes = [.json]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try data.write(to: url)
+            log.info("exportLayouts: saved to \(url.path)")
+        } catch {
+            log.error("exportLayouts: write failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func importLayouts() {
+        let panel = NSOpenPanel()
+        panel.title = "Import Layout"
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let data = try Data(contentsOf: url)
+            guard let coordinator else { return }
+            if coordinator.importLayout(data) {
+                log.info("importLayouts: imported from \(url.path)")
+            } else {
+                showAlert(message: "Invalid Layout File", info: "The selected file is not a valid KTApple layout.")
+            }
+        } catch {
+            log.error("importLayouts: read failed: \(error.localizedDescription)")
+            showAlert(message: "Could Not Read File", info: error.localizedDescription)
+        }
+    }
+
+    private func showAlert(message: String, info: String) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = info
+        alert.alertStyle = .warning
+        alert.runModal()
+    }
+
+    private func promptSaveProfile() {
+        let alert = NSAlert()
+        alert.messageText = "Save Layout as Profile"
+        alert.informativeText = "Enter a name for this layout profile."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+        let nextIndex = (coordinator?.profiles.count ?? 0) + 1
+        textField.stringValue = "Profile \(nextIndex)"
+        textField.selectText(nil)
+        alert.accessoryView = textField
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = textField.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        coordinator?.saveCurrentAsProfile(name: name)
     }
 
     // MARK: - Focus Tracking

@@ -64,6 +64,19 @@ public final class LayoutStore {
         saveToDisk()
     }
 
+    /// Encode the current layout document to JSON data for export.
+    public func exportJSON() throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try encoder.encode(document)
+    }
+
+    /// Replace the current layout document from imported JSON data and persist to disk.
+    public func importJSON(_ data: Data) throws {
+        document = try JSONDecoder().decode(LayoutDocument.self, from: data)
+        saveToDisk()
+    }
+
     private func saveToDisk() {
         do {
             let encoder = JSONEncoder()
