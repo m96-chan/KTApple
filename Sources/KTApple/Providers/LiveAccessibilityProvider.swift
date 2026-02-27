@@ -41,6 +41,8 @@ final class LiveAccessibilityProvider: AccessibilityProvider {
             let app = AXUIElementCreateApplication(pid)
             let attrs = axWindowAttributes(app: app, targetWindowID: windowID)
 
+            let bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
+
             return WindowInfo(
                 id: windowID,
                 pid: pid,
@@ -49,7 +51,8 @@ final class LiveAccessibilityProvider: AccessibilityProvider {
                 isResizable: attrs.isResizable,
                 isMinimized: attrs.isMinimized,
                 isFullscreen: attrs.isFullscreen,
-                subrole: attrs.subrole
+                subrole: attrs.subrole,
+                bundleID: bundleID
             )
         }
     }

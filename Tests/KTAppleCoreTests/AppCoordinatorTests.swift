@@ -142,7 +142,8 @@ struct AppCoordinatorTests {
         displays: [DisplayInfo] = [],
         windows: [WindowInfo] = [],
         spaceProvider: MockSpaceProvider? = nil,
-        windowLifecycleProvider: MockWindowLifecycleProvider? = nil
+        windowLifecycleProvider: MockWindowLifecycleProvider? = nil,
+        ruleStore: RuleStore? = nil
     ) -> (AppCoordinator, MockAccessibilityChecker, CoordinatorMockDisplayProvider, CoordinatorMockHotkeyProvider, CoordinatorMockAccessibilityProvider, MockStorageProvider) {
         let checker = MockAccessibilityChecker()
         checker.isTrustedResult = trusted
@@ -162,7 +163,8 @@ struct AppCoordinatorTests {
             accessibilityAPIProvider: accessibilityProvider,
             storageProvider: storageProvider,
             spaceProvider: spaceProvider,
-            windowLifecycleProvider: windowLifecycleProvider
+            windowLifecycleProvider: windowLifecycleProvider,
+            ruleStore: ruleStore
         )
 
         return (coordinator, checker, displayProvider, hotkeyProvider, accessibilityProvider, storageProvider)
@@ -804,6 +806,147 @@ struct AppCoordinatorTests {
 
         coordinator.stop()
         #expect(!spaceProvider.isObserving)
+    }
+
+    // MARK: - Rule-Based Auto-Assignment
+
+    @Test func ruleMatchAssignsWindowToTile() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let lifecycleProvider = MockWindowLifecycleProvider()
+        let ruleStorage = MockStorageProvider()
+        let ruleStore = RuleStore(provider: ruleStorage)
+        ruleStore.addRule(AppRule(bundleID: "com.apple.Terminal", appName: "Terminal", displayID: 1, tileIndex: 1))
+
+        let (coordinator, _, _, _, accessibilityProvider, _) = makeCoordinator(
+            displays: [display], windowLifecycleProvider: lifecycleProvider, ruleStore: ruleStore
+        )
+        coordinator.start()
+
+        let manager = coordinator.tileManagers[1]!
+        let (_, right) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
+
+        let newWindow = WindowInfo(
+            id: 99, pid: 1, title: "Terminal",
+            frame: CGRect(x: 100, y: 100, width: 800, height: 600),
+            isResizable: true, isMinimized: false, isFullscreen: false,
+            subrole: .standardWindow, bundleID: "com.apple.Terminal"
+        )
+        accessibilityProvider.windows.append(newWindow)
+        lifecycleProvider.simulateWindowCreated(newWindow)
+
+        #expect(right.windowIDs.contains(99))
+    }
+
+    @Test func noBundleIDNoAutoAssignment() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let lifecycleProvider = MockWindowLifecycleProvider()
+        let ruleStorage = MockStorageProvider()
+        let ruleStore = RuleStore(provider: ruleStorage)
+        ruleStore.addRule(AppRule(bundleID: "com.apple.Terminal", appName: "Terminal", displayID: 1, tileIndex: 0))
+
+        let (coordinator, _, _, _, _, _) = makeCoordinator(
+            displays: [display], windowLifecycleProvider: lifecycleProvider, ruleStore: ruleStore
+        )
+        coordinator.start()
+
+        let manager = coordinator.tileManagers[1]!
+        let (left, right) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
+
+        // Window without bundleID
+        let newWindow = WindowInfo(
+            id: 99, pid: 1, title: "Unknown",
+            frame: CGRect(x: 100, y: 100, width: 800, height: 600),
+            isResizable: true, isMinimized: false, isFullscreen: false,
+            subrole: .standardWindow
+        )
+        lifecycleProvider.simulateWindowCreated(newWindow)
+
+        #expect(!left.windowIDs.contains(99))
+        #expect(!right.windowIDs.contains(99))
+    }
+
+    @Test func noMatchingRuleNoAutoAssignment() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let lifecycleProvider = MockWindowLifecycleProvider()
+        let ruleStorage = MockStorageProvider()
+        let ruleStore = RuleStore(provider: ruleStorage)
+        ruleStore.addRule(AppRule(bundleID: "com.apple.Terminal", appName: "Terminal", displayID: 1, tileIndex: 0))
+
+        let (coordinator, _, _, _, _, _) = makeCoordinator(
+            displays: [display], windowLifecycleProvider: lifecycleProvider, ruleStore: ruleStore
+        )
+        coordinator.start()
+
+        let manager = coordinator.tileManagers[1]!
+        let (left, right) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
+
+        let newWindow = WindowInfo(
+            id: 99, pid: 1, title: "Safari",
+            frame: CGRect(x: 100, y: 100, width: 800, height: 600),
+            isResizable: true, isMinimized: false, isFullscreen: false,
+            subrole: .standardWindow, bundleID: "com.apple.Safari"
+        )
+        lifecycleProvider.simulateWindowCreated(newWindow)
+
+        #expect(!left.windowIDs.contains(99))
+        #expect(!right.windowIDs.contains(99))
+    }
+
+    @Test func tileIndexClampedToLeafCount() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let lifecycleProvider = MockWindowLifecycleProvider()
+        let ruleStorage = MockStorageProvider()
+        let ruleStore = RuleStore(provider: ruleStorage)
+        // tileIndex 5 but only 2 leaves → should clamp to last leaf (index 1)
+        ruleStore.addRule(AppRule(bundleID: "com.apple.Terminal", appName: "Terminal", displayID: 1, tileIndex: 5))
+
+        let (coordinator, _, _, _, accessibilityProvider, _) = makeCoordinator(
+            displays: [display], windowLifecycleProvider: lifecycleProvider, ruleStore: ruleStore
+        )
+        coordinator.start()
+
+        let manager = coordinator.tileManagers[1]!
+        let (_, right) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
+
+        let newWindow = WindowInfo(
+            id: 99, pid: 1, title: "Terminal",
+            frame: CGRect(x: 100, y: 100, width: 800, height: 600),
+            isResizable: true, isMinimized: false, isFullscreen: false,
+            subrole: .standardWindow, bundleID: "com.apple.Terminal"
+        )
+        accessibilityProvider.windows.append(newWindow)
+        lifecycleProvider.simulateWindowCreated(newWindow)
+
+        // Should be assigned to the last leaf (right)
+        #expect(right.windowIDs.contains(99))
+    }
+
+    @Test func shouldFloatSkipsRule() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let lifecycleProvider = MockWindowLifecycleProvider()
+        let ruleStorage = MockStorageProvider()
+        let ruleStore = RuleStore(provider: ruleStorage)
+        ruleStore.addRule(AppRule(bundleID: "com.apple.Terminal", appName: "Terminal", displayID: 1, tileIndex: 0))
+
+        let (coordinator, _, _, _, _, _) = makeCoordinator(
+            displays: [display], windowLifecycleProvider: lifecycleProvider, ruleStore: ruleStore
+        )
+        coordinator.start()
+
+        let manager = coordinator.tileManagers[1]!
+        let (left, right) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
+
+        // Dialog subrole → shouldFloat = true
+        let newWindow = WindowInfo(
+            id: 99, pid: 1, title: "Dialog",
+            frame: CGRect(x: 100, y: 100, width: 400, height: 300),
+            isResizable: true, isMinimized: false, isFullscreen: false,
+            subrole: .dialog, bundleID: "com.apple.Terminal"
+        )
+        lifecycleProvider.simulateWindowCreated(newWindow)
+
+        #expect(!left.windowIDs.contains(99))
+        #expect(!right.windowIDs.contains(99))
     }
 
     // MARK: - Bug #29: displayDidResize reflows windows

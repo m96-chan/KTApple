@@ -14,10 +14,15 @@ final class PreferencesWindow {
         gapSize: Double,
         bindings: [HotkeyAction: HotkeyBinding],
         profiles: [LayoutProfile],
+        rules: [AppRule] = [],
+        displayIDs: [UInt32] = [],
+        leafCounts: [UInt32: Int] = [:],
         onGapSizeChanged: @escaping (Double) -> Void,
         onBindingChanged: @escaping (HotkeyBinding) -> Void,
         onProfileRenamed: @escaping (UUID, String) -> Void,
-        onProfileDeleted: @escaping (UUID) -> Void
+        onProfileDeleted: @escaping (UUID) -> Void,
+        onRuleAdded: @escaping (AppRule) -> Void = { _ in },
+        onRuleDeleted: @escaping (UUID) -> Void = { _ in }
     ) {
         if let window, window.isVisible {
             window.makeKeyAndOrderFront(nil)
@@ -29,10 +34,15 @@ final class PreferencesWindow {
             gapSize: gapSize,
             bindings: bindings,
             profiles: profiles,
+            rules: rules,
+            displayIDs: displayIDs,
+            leafCounts: leafCounts,
             onGapSizeChanged: onGapSizeChanged,
             onBindingChanged: onBindingChanged,
             onProfileRenamed: onProfileRenamed,
-            onProfileDeleted: onProfileDeleted
+            onProfileDeleted: onProfileDeleted,
+            onRuleAdded: onRuleAdded,
+            onRuleDeleted: onRuleDeleted
         )
         self.state = newState
 
@@ -40,6 +50,9 @@ final class PreferencesWindow {
             gapSize: newState.gapBinding,
             bindings: newState.bindingsBinding,
             profiles: newState.profilesBinding,
+            rules: newState.rulesBinding,
+            displayIDs: displayIDs,
+            leafCounts: leafCounts,
             onGapSizeChanged: onGapSizeChanged,
             onBindingChanged: { binding in
                 newState.bindings[binding.action] = binding
@@ -54,11 +67,17 @@ final class PreferencesWindow {
             onProfileDeleted: { id in
                 newState.profiles.removeAll { $0.id == id }
                 onProfileDeleted(id)
+            },
+            onRuleAdded: { rule in
+                onRuleAdded(rule)
+            },
+            onRuleDeleted: { id in
+                onRuleDeleted(id)
             }
         )
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 640),
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 720),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -89,10 +108,15 @@ private class PreferencesState: ObservableObject {
     @Published var gapSize: Double
     @Published var bindings: [HotkeyAction: HotkeyBinding]
     @Published var profiles: [LayoutProfile]
+    @Published var rules: [AppRule]
+    let displayIDs: [UInt32]
+    let leafCounts: [UInt32: Int]
     let onGapSizeChanged: (Double) -> Void
     let onBindingChanged: (HotkeyBinding) -> Void
     let onProfileRenamed: (UUID, String) -> Void
     let onProfileDeleted: (UUID) -> Void
+    let onRuleAdded: (AppRule) -> Void
+    let onRuleDeleted: (UUID) -> Void
 
     var gapBinding: Binding<Double> {
         Binding(get: { self.gapSize }, set: { self.gapSize = $0 })
@@ -106,21 +130,35 @@ private class PreferencesState: ObservableObject {
         Binding(get: { self.profiles }, set: { self.profiles = $0 })
     }
 
+    var rulesBinding: Binding<[AppRule]> {
+        Binding(get: { self.rules }, set: { self.rules = $0 })
+    }
+
     init(
         gapSize: Double,
         bindings: [HotkeyAction: HotkeyBinding],
         profiles: [LayoutProfile],
+        rules: [AppRule],
+        displayIDs: [UInt32],
+        leafCounts: [UInt32: Int],
         onGapSizeChanged: @escaping (Double) -> Void,
         onBindingChanged: @escaping (HotkeyBinding) -> Void,
         onProfileRenamed: @escaping (UUID, String) -> Void,
-        onProfileDeleted: @escaping (UUID) -> Void
+        onProfileDeleted: @escaping (UUID) -> Void,
+        onRuleAdded: @escaping (AppRule) -> Void,
+        onRuleDeleted: @escaping (UUID) -> Void
     ) {
         self.gapSize = gapSize
         self.bindings = bindings
         self.profiles = profiles
+        self.rules = rules
+        self.displayIDs = displayIDs
+        self.leafCounts = leafCounts
         self.onGapSizeChanged = onGapSizeChanged
         self.onBindingChanged = onBindingChanged
         self.onProfileRenamed = onProfileRenamed
         self.onProfileDeleted = onProfileDeleted
+        self.onRuleAdded = onRuleAdded
+        self.onRuleDeleted = onRuleDeleted
     }
 }

@@ -20,6 +20,7 @@ public struct WindowInfo: Sendable {
     public let isMinimized: Bool
     public let isFullscreen: Bool
     public let subrole: WindowSubrole
+    public let bundleID: String?
 
     public init(
         id: UInt32,
@@ -29,7 +30,8 @@ public struct WindowInfo: Sendable {
         isResizable: Bool,
         isMinimized: Bool,
         isFullscreen: Bool,
-        subrole: WindowSubrole
+        subrole: WindowSubrole,
+        bundleID: String? = nil
     ) {
         self.id = id
         self.pid = pid
@@ -39,5 +41,6 @@ public struct WindowInfo: Sendable {
         self.isMinimized = isMinimized
         self.isFullscreen = isFullscreen
         self.subrole = subrole
+        self.bundleID = bundleID
     }
 }

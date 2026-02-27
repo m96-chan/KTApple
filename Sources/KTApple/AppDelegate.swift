@@ -40,8 +40,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let layoutPath = supportDir.appendingPathComponent("layouts.json").path
         let hotkeyPath = supportDir.appendingPathComponent("hotkeys.json").path
         let profilePath = supportDir.appendingPathComponent("profiles.json").path
+        let rulePath = supportDir.appendingPathComponent("rules.json").path
 
         let hotkeyStore = HotkeyStore(provider: storageProvider, filePath: hotkeyPath)
+        let ruleStore = RuleStore(provider: storageProvider, filePath: rulePath)
         let windowLifecycleProvider = LiveWindowLifecycleProvider(accessibilityProvider: accessibilityProvider)
 
         let coordinator = AppCoordinator(
@@ -54,7 +56,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hotkeyStore: hotkeyStore,
             profileFilePath: profilePath,
             spaceProvider: spaceProvider,
-            windowLifecycleProvider: windowLifecycleProvider
+            windowLifecycleProvider: windowLifecycleProvider,
+            ruleStore: ruleStore
         )
 
         coordinator.onOpenEditor = { [weak self] in
@@ -273,10 +276,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if preferencesWindow == nil {
             preferencesWindow = PreferencesWindow()
         }
+        let displayIDs = Array(coordinator?.tileManagers.keys.sorted() ?? [])
+        var leafCounts: [UInt32: Int] = [:]
+        for (id, manager) in coordinator?.tileManagers ?? [:] {
+            leafCounts[id] = manager.leafTiles().count
+        }
         preferencesWindow?.show(
             gapSize: Double(coordinator?.gapSize ?? 8),
             bindings: coordinator?.activeHotkeyBindings ?? [:],
             profiles: coordinator?.profiles ?? [],
+            rules: coordinator?.rules ?? [],
+            displayIDs: displayIDs,
+            leafCounts: leafCounts,
             onGapSizeChanged: { [weak self] size in
                 self?.coordinator?.setGapSize(CGFloat(size))
             },
@@ -288,6 +299,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onProfileDeleted: { [weak self] id in
                 self?.coordinator?.deleteProfile(id: id)
+            },
+            onRuleAdded: { [weak self] rule in
+                self?.coordinator?.addRule(rule)
+            },
+            onRuleDeleted: { [weak self] id in
+                self?.coordinator?.deleteRule(id: id)
             }
         )
     }

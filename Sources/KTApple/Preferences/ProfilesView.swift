@@ -3,9 +3,19 @@ import SwiftUI
 
 /// Compact profile management list embedded in the Preferences form.
 struct ProfilesView: View {
-    let profiles: [LayoutProfile]
+    @State private var profiles: [LayoutProfile]
     let onProfileRenamed: (UUID, String) -> Void
     let onProfileDeleted: (UUID) -> Void
+
+    init(
+        profiles: [LayoutProfile],
+        onProfileRenamed: @escaping (UUID, String) -> Void,
+        onProfileDeleted: @escaping (UUID) -> Void
+    ) {
+        _profiles = State(initialValue: profiles)
+        self.onProfileRenamed = onProfileRenamed
+        self.onProfileDeleted = onProfileDeleted
+    }
 
     var body: some View {
         if profiles.isEmpty {
@@ -18,8 +28,16 @@ struct ProfilesView: View {
                 ProfileRow(
                     index: index,
                     profile: profile,
-                    onRename: { onProfileRenamed(profile.id, $0) },
-                    onDelete: { onProfileDeleted(profile.id) }
+                    onRename: { newName in
+                        if let i = profiles.firstIndex(where: { $0.id == profile.id }) {
+                            profiles[i].name = newName
+                        }
+                        onProfileRenamed(profile.id, newName)
+                    },
+                    onDelete: {
+                        profiles.removeAll { $0.id == profile.id }
+                        onProfileDeleted(profile.id)
+                    }
                 )
             }
         }

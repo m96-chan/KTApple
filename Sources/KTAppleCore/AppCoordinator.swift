@@ -16,6 +16,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
     public let layoutStore: LayoutStore
     public let hotkeyStore: HotkeyStore
     public let profileStore: ProfileStore
+    public let ruleStore: RuleStore
     private let spaceProvider: SpaceProvider?
     private let windowLifecycleProvider: WindowLifecycleProvider?
 
@@ -89,7 +90,8 @@ public final class AppCoordinator: DisplayObserverDelegate {
         hotkeyStore: HotkeyStore? = nil,
         profileFilePath: String = "profiles.json",
         spaceProvider: SpaceProvider? = nil,
-        windowLifecycleProvider: WindowLifecycleProvider? = nil
+        windowLifecycleProvider: WindowLifecycleProvider? = nil,
+        ruleStore: RuleStore? = nil
     ) {
         self.accessibilityProvider = accessibilityProvider
         self.displayObserver = DisplayObserver(provider: displayProvider)
@@ -98,6 +100,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
         self.layoutStore = LayoutStore(provider: storageProvider, filePath: layoutFilePath)
         self.hotkeyStore = hotkeyStore ?? HotkeyStore(provider: storageProvider, filePath: "hotkeys.json")
         self.profileStore = ProfileStore(provider: storageProvider, filePath: profileFilePath)
+        self.ruleStore = ruleStore ?? RuleStore(provider: storageProvider, filePath: "rules.json")
         self.spaceProvider = spaceProvider
         self.windowLifecycleProvider = windowLifecycleProvider
 
@@ -133,6 +136,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
         }
 
         hotkeyStore.loadFromDisk()
+        ruleStore.loadFromDisk()
         let mergedBindings = HotkeyManager.defaultBindings.map {
             hotkeyStore.customBinding(for: $0.action) ?? $0
         }
@@ -404,6 +408,21 @@ public final class AppCoordinator: DisplayObserverDelegate {
         onProfilesChanged?()
     }
 
+    // MARK: - Rule Operations
+
+    /// All auto-assignment rules.
+    public var rules: [AppRule] { ruleStore.allRules }
+
+    /// Add a new auto-assignment rule and persist.
+    public func addRule(_ rule: AppRule) {
+        ruleStore.addRule(rule)
+    }
+
+    /// Delete an auto-assignment rule and persist.
+    public func deleteRule(id: UUID) {
+        ruleStore.deleteRule(id: id)
+    }
+
     /// Update a hotkey binding at runtime and persist it.
     public func updateHotkeyBinding(_ binding: HotkeyBinding) {
         hotkeyManager.update(binding)
@@ -512,8 +531,18 @@ public final class AppCoordinator: DisplayObserverDelegate {
     }
 
     private func handleWindowCreated(_ window: WindowInfo) {
-        // New windows appear at their default position/size — no auto-assignment to tiles.
-        // Users can Shift+drag to assign windows to tiles manually.
+        guard !WindowManager.shouldFloat(window) else { return }
+        guard let bundleID = window.bundleID,
+              let rule = ruleStore.rule(for: bundleID),
+              let manager = tileManagers[rule.displayID] else { return }
+
+        let leaves = manager.leafTiles()
+        guard !leaves.isEmpty else { return }
+        let clampedIndex = min(rule.tileIndex, leaves.count - 1)
+        let targetTile = leaves[clampedIndex]
+
+        Self.log.info("handleWindowCreated: auto-assign windowID=\(window.id) bundleID=\(bundleID) → tile[\(clampedIndex)]")
+        windowManager.assignWindow(id: window.id, to: targetTile, tileManager: manager)
     }
 
     private func handleWindowDestroyed(_ windowID: UInt32) {

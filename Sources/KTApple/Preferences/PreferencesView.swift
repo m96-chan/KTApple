@@ -6,10 +6,15 @@ struct PreferencesView: View {
     @Binding var gapSize: Double
     @Binding var bindings: [HotkeyAction: HotkeyBinding]
     @Binding var profiles: [LayoutProfile]
+    @Binding var rules: [AppRule]
+    var displayIDs: [UInt32]
+    var leafCounts: [UInt32: Int]
     var onGapSizeChanged: (Double) -> Void
     var onBindingChanged: (HotkeyBinding) -> Void
     var onProfileRenamed: (UUID, String) -> Void
     var onProfileDeleted: (UUID) -> Void
+    var onRuleAdded: (AppRule) -> Void
+    var onRuleDeleted: (UUID) -> Void
 
     var body: some View {
         Form {
@@ -36,6 +41,16 @@ struct PreferencesView: View {
                 )
             }
 
+            Section("Auto-Assign Rules") {
+                RulesView(
+                    rules: rules,
+                    displayIDs: displayIDs,
+                    leafCounts: leafCounts,
+                    onAddRule: onRuleAdded,
+                    onDeleteRule: onRuleDeleted
+                )
+            }
+
             Section("Keyboard Shortcuts") {
                 shortcutRow(.openEditor, label: "Open Editor")
                 Divider().padding(.vertical, 2)
@@ -59,7 +74,7 @@ struct PreferencesView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 400, height: 640)
+        .frame(width: 400, height: 720)
     }
 
     @ViewBuilder
