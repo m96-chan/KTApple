@@ -39,7 +39,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
     /// Gap size applied to all tile managers.
     public var gapSize: CGFloat = 0 {
         didSet {
-            for (displayID, manager) in tileManagers {
+            for (displayID, manager) in tileManagers.sorted(by: { $0.key < $1.key }) {
                 manager.gap = gapSize
                 reflowWindows(for: displayID)
             }
@@ -265,7 +265,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
 
         var changedDisplayIDs: Set<UInt32> = []
 
-        for (displayID, manager) in tileManagers {
+        for (displayID, manager) in tileManagers.sorted(by: { $0.key < $1.key }) {
             let newSpaceID = spaceProvider.activeSpaceID(for: displayID)
             let oldSpaceID = activeSpaceIDs[displayID]
 
@@ -299,7 +299,8 @@ public final class AppCoordinator: DisplayObserverDelegate {
                 for displayID in changedDisplayIDs {
                     guard let manager = tileManagers[displayID] else { continue }
                     for leaf in manager.leafTiles() {
-                        for wid in leaf.windowIDs {
+                        // Copy to Array before iterating — Set mutation during iteration is unsafe
+                        for wid in Array(leaf.windowIDs) {
                             leaf.removeWindow(id: wid)
                         }
                     }
@@ -330,7 +331,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
             Self.log.error("importLayout: decode failed: \(error.localizedDescription)")
             return false
         }
-        for (displayID, manager) in tileManagers {
+        for (displayID, manager) in tileManagers.sorted(by: { $0.key < $1.key }) {
             let key = layoutKey(for: displayID)
             layoutStore.apply(to: manager, for: key)
             reflowWindows(for: displayID)
@@ -507,21 +508,29 @@ public final class AppCoordinator: DisplayObserverDelegate {
     }
 
     private func applyProfile(_ profile: LayoutProfile) {
-        for (displayID, manager) in tileManagers {
+        for (displayID, manager) in tileManagers.sorted(by: { $0.key < $1.key }) {
             guard let snapshot = profile.displaySnapshots["\(displayID)"] else {
                 Self.log.debug("applyProfile: no snapshot for displayID=\(displayID) in '\(profile.name)'")
                 continue
             }
-            // Collect existing window IDs before replacing the tile tree
-            let existingWindowIDs = manager.leafTiles().flatMap { Array($0.windowIDs) }
+            // Build per-leaf-index mapping preserving original positions
+            let oldLeaves = manager.leafTiles()
+            var windowsByLeafIndex: [(index: Int, windowIDs: [UInt32])] = []
+            for (i, leaf) in oldLeaves.enumerated() where !leaf.windowIDs.isEmpty {
+                windowsByLeafIndex.append((index: i, windowIDs: leaf.windowIDs.sorted()))
+            }
 
             let newRoot = snapshot.toTile() // snapshot has no windowIDs (cleared on save)
             manager.replaceRoot(newRoot)
 
-            // Re-seat existing windows into new leaf tiles in order
+            // Re-seat windows into new leaves, preserving leaf index where possible
             let newLeaves = manager.leafTiles()
-            for (i, windowID) in existingWindowIDs.enumerated() where i < newLeaves.count {
-                newLeaves[i].addWindow(id: windowID)
+            guard !newLeaves.isEmpty else { continue }
+            for entry in windowsByLeafIndex {
+                let targetIndex = min(entry.index, newLeaves.count - 1)
+                for wid in entry.windowIDs {
+                    newLeaves[targetIndex].addWindow(id: wid)
+                }
             }
 
             let key = layoutKey(for: displayID)
@@ -559,10 +568,10 @@ public final class AppCoordinator: DisplayObserverDelegate {
         for window in windows {
             guard !WindowManager.shouldFloat(window) else { continue }
 
-            // Find the tile manager for this window's display
-            for (_, manager) in tileManagers {
+            // Find the tile manager for this window's display (deterministic order)
+            for (_, manager) in tileManagers.sorted(by: { $0.key < $1.key }) {
                 if manager.screenFrame.contains(window.frame.origin) {
-                    if let targetTile = firstAvailableLeaf(in: manager) {
+                    if let targetTile = bestLeaf(for: window, in: manager) ?? firstAvailableLeaf(in: manager) {
                         // Register only — don't resize on startup
                         targetTile.addWindow(id: window.id)
                         // Save current size so drag-out can restore it
@@ -578,8 +587,17 @@ public final class AppCoordinator: DisplayObserverDelegate {
         manager.leafTiles().first { $0.windowIDs.isEmpty } ?? manager.leafTiles().first
     }
 
+    /// Find the best leaf tile for a window based on its current screen position.
+    private func bestLeaf(for window: WindowInfo, in manager: TileManager) -> Tile? {
+        let center = CGPoint(
+            x: window.frame.origin.x + window.frame.width / 2,
+            y: window.frame.origin.y + window.frame.height / 2
+        )
+        return manager.tileAt(point: center)
+    }
+
     private func findTileContaining(windowID: UInt32) -> (TileManager, Tile)? {
-        for (_, manager) in tileManagers {
+        for (_, manager) in tileManagers.sorted(by: { $0.key < $1.key }) {
             if let tile = manager.root.findTile(containingWindow: windowID) {
                 return (manager, tile)
             }
@@ -658,8 +676,17 @@ public final class AppCoordinator: DisplayObserverDelegate {
     private func toggleMaximize(windowID: UInt32) {
         if let state = maximizedWindows.removeValue(forKey: windowID) {
             // Un-maximize: restore to original tile
-            guard let manager = tileManagers[state.displayID],
-                  let tile = manager.root.find(id: state.tileID) else { return }
+            guard let manager = tileManagers[state.displayID] else { return }
+            let tile: Tile
+            if let found = manager.root.find(id: state.tileID) {
+                tile = found
+            } else {
+                // Tile ID is stale (e.g. after profile switch) — fall back to leaf index
+                let leaves = manager.leafTiles()
+                guard !leaves.isEmpty else { return }
+                tile = leaves[min(state.leafIndex, leaves.count - 1)]
+                Self.log.debug("toggleMaximize: tileID stale, falling back to leafIndex=\(state.leafIndex)")
+            }
             Self.log.debug("toggleMaximize: restore windowID=\(windowID)")
             tile.addWindow(id: windowID)
             let frame = manager.frame(for: tile)
@@ -667,10 +694,13 @@ public final class AppCoordinator: DisplayObserverDelegate {
         } else {
             // Maximize: expand window to full screen frame
             guard let (manager, tile) = findTileContaining(windowID: windowID) else { return }
+            let leaves = manager.leafTiles()
+            let leafIndex = leaves.firstIndex(where: { $0.id == tile.id }) ?? 0
             Self.log.debug("toggleMaximize: maximize windowID=\(windowID)")
             maximizedWindows[windowID] = MaximizedState(
                 displayID: manager.displayID,
-                tileID: tile.id
+                tileID: tile.id,
+                leafIndex: leafIndex
             )
             tile.removeWindow(id: windowID)
             windowManager.setWindowFrame(id: windowID, frame: manager.screenFrame)
@@ -682,6 +712,7 @@ public final class AppCoordinator: DisplayObserverDelegate {
 struct MaximizedState {
     let displayID: UInt32
     let tileID: UUID
+    let leafIndex: Int
 }
 
 // MARK: - GapResizeDelegate
@@ -690,7 +721,7 @@ extension AppCoordinator: GapResizeDelegate {
     public func didResize(_ boundary: TileBoundary, affectedTiles: [UUID]) {
         Self.log.debug("didResize: boundary axis=\(String(describing: boundary.axis)) affectedTiles=\(affectedTiles.count)")
         // Find which display owns these tiles and auto-save + reflow windows
-        for (displayID, manager) in tileManagers {
+        for (displayID, manager) in tileManagers.sorted(by: { $0.key < $1.key }) {
             if manager.root.find(id: boundary.leadingTileID) != nil {
                 // Reflow windows in affected tiles
                 for tileID in affectedTiles {
@@ -714,7 +745,7 @@ extension AppCoordinator: GapResizeDelegate {
 extension AppCoordinator: DragDropDelegate {
     public func didDropWindow(_ windowID: UInt32, onTile tileID: UUID) {
         Self.log.info("didDropWindow: windowID=\(windowID) onTile=\(tileID)")
-        for (_, manager) in tileManagers {
+        for (_, manager) in tileManagers.sorted(by: { $0.key < $1.key }) {
             if let tile = manager.root.find(id: tileID) {
                 windowManager.assignWindow(id: windowID, to: tile, tileManager: manager)
                 break

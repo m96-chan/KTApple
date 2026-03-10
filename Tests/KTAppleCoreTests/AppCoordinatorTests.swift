@@ -984,4 +984,141 @@ struct AppCoordinatorTests {
         #expect(hotkeyProvider.registeredBindings.count == firstRegistrationCount)
         #expect(checker.promptCount == firstCheckCount)
     }
+
+    // MARK: - Window-to-Tile Assignment Fixes
+
+    @Test func applyProfilePreservesWindowLeafPosition() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let (coordinator, _, _, _, _, _) = makeCoordinator(displays: [display])
+        coordinator.start()
+
+        let manager = coordinator.tileManagers[1]!
+        // Create 3 leaves: [A, B, C]
+        let (a, right) = manager.split(manager.root, direction: .horizontal, ratio: 0.333)
+        let (b, c) = manager.split(right, direction: .horizontal, ratio: 0.5)
+        a.addWindow(id: 10) // leaf 0
+        b.addWindow(id: 20) // leaf 1
+        c.addWindow(id: 30) // leaf 2
+
+        // Save a profile with 3 leaves
+        let profile = coordinator.saveCurrentAsProfile(name: "Three")
+        // Switch to that profile — windows should keep their leaf positions
+        coordinator.switchProfile(id: profile.id)
+
+        let newLeaves = manager.leafTiles()
+        #expect(newLeaves.count == 3)
+        #expect(newLeaves[0].windowIDs.contains(10))
+        #expect(newLeaves[1].windowIDs.contains(20))
+        #expect(newLeaves[2].windowIDs.contains(30))
+    }
+
+    @Test func applyProfileClampsWhenFewerLeaves() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let (coordinator, _, _, _, _, _) = makeCoordinator(displays: [display])
+        coordinator.start()
+
+        // Save a 2-leaf profile
+        let manager = coordinator.tileManagers[1]!
+        manager.split(manager.root, direction: .horizontal, ratio: 0.5)
+        let twoLeafProfile = coordinator.saveCurrentAsProfile(name: "Two")
+
+        // Now create a 3-leaf layout with windows
+        let threeRoot = Tile(proportion: 1.0, layoutDirection: .horizontal)
+        let child0 = Tile(proportion: 0.333, layoutDirection: .horizontal)
+        let child1 = Tile(proportion: 0.333, layoutDirection: .horizontal)
+        let child2 = Tile(proportion: 0.334, layoutDirection: .horizontal)
+        threeRoot.addChild(child0)
+        threeRoot.addChild(child1)
+        threeRoot.addChild(child2)
+        manager.replaceRoot(threeRoot)
+        child0.addWindow(id: 10)
+        child1.addWindow(id: 20)
+        child2.addWindow(id: 30) // leaf 2 → should clamp to leaf 1 in 2-leaf profile
+
+        // Apply the 2-leaf profile
+        coordinator.switchProfile(id: twoLeafProfile.id)
+
+        let newLeaves = manager.leafTiles()
+        #expect(newLeaves.count == 2)
+        // Window 10 should stay in leaf 0
+        #expect(newLeaves[0].windowIDs.contains(10))
+        // Windows 20 and 30 should both be in leaf 1 (20 was leaf 1, 30 clamped from leaf 2)
+        #expect(newLeaves[1].windowIDs.contains(20))
+        #expect(newLeaves[1].windowIDs.contains(30))
+    }
+
+    @Test func toggleMaximizeRestoresAfterProfileSwitch() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let (coordinator, _, _, _, _, _) = makeCoordinator(displays: [display])
+        coordinator.start()
+
+        let manager = coordinator.tileManagers[1]!
+        let (left, _) = manager.split(manager.root, direction: .horizontal, ratio: 0.5)
+        left.addWindow(id: 10)
+
+        // Save profile, maximize window
+        let profile = coordinator.saveCurrentAsProfile(name: "Test")
+        coordinator.setFocusedWindowID(10)
+        coordinator.handleAction(.toggleMaximize)
+        #expect(!manager.leafTiles()[0].windowIDs.contains(10))
+
+        // Switch profile (replaces tile tree, invalidating old tile IDs)
+        coordinator.switchProfile(id: profile.id)
+
+        // Un-maximize — should fall back to leaf index 0
+        coordinator.handleAction(.toggleMaximize)
+
+        let leaves = manager.leafTiles()
+        #expect(leaves[0].windowIDs.contains(10))
+    }
+
+    @Test func spaceChangeSafelyRemovesMultipleWindows() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let spaceProvider = MockSpaceProvider()
+        spaceProvider.spaceIDsByDisplay[1] = [100, 200]
+        spaceProvider.activeSpaceByDisplay[1] = 100
+
+        let (coordinator, _, _, _, _, _) = makeCoordinator(displays: [display], spaceProvider: spaceProvider)
+        coordinator.start()
+
+        let manager = coordinator.tileManagers[1]!
+        let leaf = manager.leafTiles().first!
+        // Add multiple windows to the same leaf
+        leaf.addWindow(id: 10)
+        leaf.addWindow(id: 20)
+        leaf.addWindow(id: 30)
+
+        // Space change should not crash even with multiple windows in one leaf
+        spaceProvider.activeSpaceByDisplay[1] = 200
+        spaceProvider.simulateSpaceChange()
+
+        // The new manager for space 200 should have no windows from space 100
+        let newManager = coordinator.tileManagers[1]!
+        let allWindowIDs = newManager.leafTiles().flatMap { $0.windowIDs }
+        #expect(!allWindowIDs.contains(10))
+        #expect(!allWindowIDs.contains(20))
+        #expect(!allWindowIDs.contains(30))
+    }
+
+    @Test func assignWindowsToDeterministicDisplay() {
+        // Two displays with overlapping regions — deterministic ordering ensures
+        // the lower display ID wins consistently
+        let display1 = DisplayInfo(id: 1, frame: CGRect(x: 0, y: 0, width: 1920, height: 1080), name: "Main")
+        let display2 = DisplayInfo(id: 2, frame: CGRect(x: 1920, y: 0, width: 1920, height: 1080), name: "Secondary")
+
+        // Window on display 2 boundary
+        let window = WindowInfo(
+            id: 42, pid: 1, title: "Test",
+            frame: CGRect(x: 1920, y: 100, width: 800, height: 600),
+            isResizable: true, isMinimized: false, isFullscreen: false,
+            subrole: .standardWindow
+        )
+        let (coordinator, _, _, _, _, _) = makeCoordinator(displays: [display1, display2], windows: [window])
+        coordinator.start()
+
+        // Window's origin (1920, 100) is on display 2
+        let manager2 = coordinator.tileManagers[2]!
+        let hasWindow = manager2.root.leafTiles().contains { $0.windowIDs.contains(42) }
+        #expect(hasWindow)
+    }
 }
