@@ -23,7 +23,7 @@ jobs:
     env:
       HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -76,7 +76,7 @@ jobs:
           file build/KTApple.app/Contents/MacOS/KTApple
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           draft: true
           generate_release_notes: true
@@ -84,16 +84,20 @@ jobs:
           name: KTApple ${{ steps.version.outputs.version }}
           files: build/KTApple-${{ steps.version.outputs.version }}-arm64.dmg
 
-      - name: Update Homebrew tap
+      - name: Open a Homebrew tap pull request
         if: env.HOMEBREW_TAP_TOKEN != ''
         env:
           GH_TOKEN: ${{ env.HOMEBREW_TAP_TOKEN }}
         run: |
+          set -euo pipefail
+
+          TAP="m96-chan/homebrew-tap"
           VERSION="${{ steps.version.outputs.version }}"
           DMG_PATH="build/KTApple-${VERSION}-arm64.dmg"
           SHA256=$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')
+          BRANCH="ktapple-${VERSION}"
 
-          echo "==> Updating Homebrew tap (version=${VERSION}, sha256=${SHA256})"
+          echo "==> Preparing tap update (version=${VERSION}, sha256=${SHA256})"
 
           CASK_CONTENT="cask \"ktapple\" do
             version \"${VERSION}\"
@@ -114,17 +118,45 @@ jobs:
           end
           "
 
-          # Get current file SHA (needed for update)
-          FILE_SHA=$(gh api repos/m96-chan/homebrew-tap/contents/Casks/ktapple.rb --jq '.sha')
+          # The tap requires changes to arrive by pull request so that
+          # verify-casks can check the URL and hash before anything is
+          # published to users. Push to a branch, then open the PR.
+          MAIN_SHA=$(gh api "repos/${TAP}/git/ref/heads/main" --jq '.object.sha')
+          if gh api "repos/${TAP}/git/ref/heads/${BRANCH}" >/dev/null 2>&1; then
+            echo "==> Branch ${BRANCH} exists, moving it to main"
+            gh api -X PATCH "repos/${TAP}/git/refs/heads/${BRANCH}" \
+              -f sha="$MAIN_SHA" -F force=true --jq '.ref'
+          else
+            gh api -X POST "repos/${TAP}/git/refs" \
+              -f ref="refs/heads/${BRANCH}" -f sha="$MAIN_SHA" --jq '.ref'
+          fi
 
-          # Update cask file via GitHub API
-          ENCODED=$(echo -n "$CASK_CONTENT" | base64)
-          gh api repos/m96-chan/homebrew-tap/contents/Casks/ktapple.rb \
-            --method PUT \
+          FILE_SHA=$(gh api "repos/${TAP}/contents/Casks/ktapple.rb?ref=${BRANCH}" --jq '.sha')
+          ENCODED=$(printf '%s' "$CASK_CONTENT" | base64)
+
+          gh api -X PUT "repos/${TAP}/contents/Casks/ktapple.rb" \
             --field message="Update KTApple to ${VERSION}" \
             --field content="$ENCODED" \
             --field sha="$FILE_SHA" \
-            --field branch="main" \
+            --field branch="$BRANCH" \
             --jq '.content.path'
 
-          echo "==> Homebrew tap updated"
+          PR_URL=$(gh api "repos/${TAP}/pulls" \
+            -f title="Update KTApple to ${VERSION}" \
+            -f head="$BRANCH" \
+            -f base=main \
+            -f body="Automated from the KTApple release workflow.
+
+          - version: \`${VERSION}\`
+          - sha256: \`${SHA256}\`
+
+          verify-casks confirms the URL and hash against the published asset before this merges." \
+            --jq '.html_url' 2>/dev/null \
+            || gh pr list -R "$TAP" --head "$BRANCH" --json url --jq '.[0].url')
+
+          echo "==> Pull request: ${PR_URL}"
+
+          # Merges itself once verify-casks passes; stays open if it fails.
+          gh pr merge "$PR_URL" --squash --auto
+
+          echo "==> Tap PR opened and queued for auto-merge"

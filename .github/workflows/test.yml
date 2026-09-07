@@ -21,7 +21,7 @@ jobs:
         # macos-26 (Tahoe) is the newest release.
         os: [macos-15, macos-26]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Liquid Glass is compiled against the macOS 26 SDK even though the app
       # deploys to macOS 15, so the build needs Xcode 26 regardless of runner.
