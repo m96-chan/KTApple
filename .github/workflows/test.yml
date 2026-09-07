@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  build-test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -47,3 +47,20 @@ jobs:
 
       - name: Test
         run: swift test
+
+  # Aggregate status check.
+  #
+  # `main` branch protection requires a status check named exactly "test".
+  # A matrix job reports one context per leg ("Test (macos-15)", ...), never a
+  # bare "test", so this job supplies the single required context and passes
+  # only when every matrix leg passed. Renaming or removing this job will make
+  # pull requests hang forever on a status that is never reported.
+  test:
+    needs: build-test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify matrix results
+        run: |
+          echo "build-test result: ${{ needs.build-test.result }}"
+          [[ "${{ needs.build-test.result }}" == "success" ]]
