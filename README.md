@@ -150,8 +150,8 @@ Each node carries:
 
 ## Requirements
 
-- **macOS 14.0+** (Sonoma)
-- **Swift 6 / Xcode 16+** (to build from source)
+- **macOS 15.0+** (Sequoia) — Liquid Glass styling is applied on macOS 26 (Tahoe)
+- **Swift 6 / Xcode 26+** (to build from source)
 - **Accessibility permission**
 - No SIP disable required
 

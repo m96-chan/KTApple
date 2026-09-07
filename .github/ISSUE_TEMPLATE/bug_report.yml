@@ -47,7 +47,7 @@ body:
     id: macos-version
     attributes:
       label: macOS Version
-      description: The macOS version you are running (e.g. 15.3).
+      description: The macOS version you are running (e.g. 26.1).
       placeholder: "15.3"
     validations:
       required: true

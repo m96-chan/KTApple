@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   release:
-    runs-on: macos-15
+    runs-on: macos-26
     env:
       HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
     steps:
@@ -38,6 +38,25 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Using version: $VERSION"
+
+      # Liquid Glass is compiled against the macOS 26 SDK even though the app
+      # deploys to macOS 15. Pin the toolchain explicitly so a runner image
+      # whose default Xcode moves cannot silently break the release build.
+      - name: Select Xcode 26
+        run: |
+          XCODE="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)"
+          if [[ -n "$XCODE" ]]; then
+            echo "Selecting $XCODE"
+            sudo xcode-select -s "$XCODE"
+          fi
+          xcodebuild -version
+          swift --version
+          SDK_VERSION="$(xcrun --show-sdk-version --sdk macosx)"
+          echo "macOS SDK: $SDK_VERSION"
+          if [[ "${SDK_VERSION%%.*}" -lt 26 ]]; then
+            echo "::error::The macOS 26 SDK is required to build Liquid Glass support (found $SDK_VERSION)"
+            exit 1
+          fi
 
       - name: Run tests
         run: swift test
@@ -89,7 +108,7 @@ jobs:
             desc \"KDE Plasma KWin-style tiling window manager for macOS\"
             homepage \"https://github.com/m96-chan/KTApple\"
 
-            depends_on macos: \">= :ventura\"
+            depends_on macos: \">= :sequoia\"
 
             app \"KTApple.app\"
 

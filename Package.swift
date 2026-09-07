@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "KTApple",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v15)],
     products: [
         .library(name: "KTAppleCore", targets: ["KTAppleCore"]),
     ],

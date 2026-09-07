@@ -11,13 +11,56 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    runs-on: macos-15
+  build-test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-15 is the minimum supported deployment target;
+        # macos-26 (Tahoe) is the newest release.
+        os: [macos-15, macos-26]
     steps:
       - uses: actions/checkout@v7
+
+      # Liquid Glass is compiled against the macOS 26 SDK even though the app
+      # deploys to macOS 15, so the build needs Xcode 26 regardless of runner.
+      # The macos-15 image ships Xcode 26 but defaults to Xcode 16.
+      - name: Select Xcode 26
+        run: |
+          XCODE="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)"
+          if [[ -n "$XCODE" ]]; then
+            echo "Selecting $XCODE"
+            sudo xcode-select -s "$XCODE"
+          fi
+          xcodebuild -version
+          swift --version
+          SDK_VERSION="$(xcrun --show-sdk-version --sdk macosx)"
+          echo "macOS SDK: $SDK_VERSION"
+          if [[ "${SDK_VERSION%%.*}" -lt 26 ]]; then
+            echo "::error::The macOS 26 SDK is required to build Liquid Glass support (found $SDK_VERSION)"
+            exit 1
+          fi
 
       - name: Build
         run: swift build
 
       - name: Test
         run: swift test
+
+  # Aggregate status check.
+  #
+  # `main` branch protection requires a status check named exactly "test".
+  # A matrix job reports one context per leg ("Test (macos-15)", ...), never a
+  # bare "test", so this job supplies the single required context and passes
+  # only when every matrix leg passed. Renaming or removing this job will make
+  # pull requests hang forever on a status that is never reported.
+  test:
+    needs: build-test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify matrix results
+        run: |
+          echo "build-test result: ${{ needs.build-test.result }}"
+          [[ "${{ needs.build-test.result }}" == "success" ]]

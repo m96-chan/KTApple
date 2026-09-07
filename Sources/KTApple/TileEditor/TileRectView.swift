@@ -3,6 +3,9 @@ import SwiftUI
 
 /// Individual tile view with inline action buttons (KDE Plasma style).
 struct TileRectView: View {
+    /// Tahoe's Liquid Glass favours a larger corner radius than the pre-26 flat rects.
+    static let cornerRadius: CGFloat = 8
+
     let tileFrame: TileFrame
     let scaleX: CGFloat
     let scaleY: CGFloat
@@ -23,14 +26,20 @@ struct TileRectView: View {
         )
 
         ZStack {
-            // Background — tapping closes the editor
-            RoundedRectangle(cornerRadius: 4)
-                .fill(Color.white.opacity(0.08))
+            // Background — tapping closes the editor.
+            // Liquid Glass on Tahoe lets the desktop read through the tile;
+            // macOS 15 gets the previous translucent white fill.
+            Color.clear
+                .glassSurface(
+                    in: RoundedRectangle(cornerRadius: Self.cornerRadius),
+                    clear: true,
+                    fallback: Color.white.opacity(0.08)
+                )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: Self.cornerRadius)
                         .stroke(Color.white.opacity(0.2), lineWidth: 1)
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 4))
+                .contentShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
                 .onTapGesture { onTap() }
 
             // App icon thumbnail for the first assigned window
@@ -43,36 +52,39 @@ struct TileRectView: View {
                     .allowsHitTesting(false)
             }
 
-            VStack(spacing: 6) {
-                // Window count indicator
-                if !tileFrame.windowIDs.isEmpty {
-                    HStack(spacing: 2) {
-                        Image(systemName: "macwindow")
-                            .font(.system(size: 9))
-                        Text("\(tileFrame.windowIDs.count)")
-                            .font(.system(size: 9, weight: .medium))
+            // Grouped so Tahoe merges the adjacent glass capsules into one pass.
+            GlassContainer(spacing: 6) {
+                VStack(spacing: 6) {
+                    // Window count indicator
+                    if !tileFrame.windowIDs.isEmpty {
+                        HStack(spacing: 2) {
+                            Image(systemName: "macwindow")
+                                .font(.system(size: 9))
+                            Text("\(tileFrame.windowIDs.count)")
+                                .font(.system(size: 9, weight: .medium))
+                        }
+                        .foregroundColor(.white.opacity(0.5))
                     }
-                    .foregroundColor(.white.opacity(0.5))
-                }
 
-                // Inline action buttons
-                tileButton(
-                    label: "Split H",
-                    icon: "rectangle.split.2x1",
-                    action: onSplitH
-                )
-                tileButton(
-                    label: "Split V",
-                    icon: "rectangle.split.1x2",
-                    action: onSplitV
-                )
-                if canDelete {
+                    // Inline action buttons
                     tileButton(
-                        label: "Delete",
-                        icon: "xmark",
-                        isDestructive: true,
-                        action: onDelete
+                        label: "Split H",
+                        icon: "rectangle.split.2x1",
+                        action: onSplitH
                     )
+                    tileButton(
+                        label: "Split V",
+                        icon: "rectangle.split.1x2",
+                        action: onSplitV
+                    )
+                    if canDelete {
+                        tileButton(
+                            label: "Delete",
+                            icon: "xmark",
+                            isDestructive: true,
+                            action: onDelete
+                        )
+                    }
                 }
             }
         }
@@ -96,9 +108,10 @@ struct TileRectView: View {
             .foregroundColor(isDestructive ? .red : .white)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(
-                Capsule()
-                    .fill(Color.white.opacity(0.15))
+            .glassSurface(
+                in: .capsule,
+                interactive: true,
+                fallback: Color.white.opacity(0.15)
             )
         }
         .buttonStyle(.plain)

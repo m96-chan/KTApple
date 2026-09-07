@@ -42,8 +42,9 @@ echo "==> Building $APP_NAME (release)..."
 cd "$PROJECT_DIR"
 swift build -c release
 
-# Locate the executable
-EXECUTABLE=".build/arm64-apple-macosx/release/$APP_NAME"
+# Locate the executable (ask SwiftPM rather than hardcoding the host triple)
+BIN_PATH="$(swift build -c release --show-bin-path)"
+EXECUTABLE="$BIN_PATH/$APP_NAME"
 if [[ ! -f "$EXECUTABLE" ]]; then
     echo "Error: executable not found at $EXECUTABLE"
     exit 1
