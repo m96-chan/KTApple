@@ -31,39 +31,47 @@ struct TileEditorView: View {
     }
 
     private var toolbar: some View {
-        HStack {
-            LayoutPresetPicker(viewModel: viewModel)
+        GlassContainer {
+            HStack {
+                LayoutPresetPicker(viewModel: viewModel)
 
-            // Undo / Redo
-            Button(action: { viewModel.undo() }) {
-                Image(systemName: "arrow.uturn.backward")
+                // Undo / Redo
+                Button(action: { viewModel.undo() }) {
+                    Image(systemName: "arrow.uturn.backward")
+                }
+                .glassButtonStyle()
+                .keyboardShortcut("z", modifiers: .command)
+                .disabled(!viewModel.canUndo)
+
+                Button(action: { viewModel.redo() }) {
+                    Image(systemName: "arrow.uturn.forward")
+                }
+                .glassButtonStyle()
+                .keyboardShortcut("z", modifiers: [.command, .shift])
+                .disabled(!viewModel.canRedo)
+
+                Spacer()
+
+                Button("Cancel") {
+                    viewModel.cancel()
+                    onDismiss()
+                }
+                .glassButtonStyle()
+                .keyboardShortcut(.cancelAction)
+
+                Button("Apply") {
+                    viewModel.apply()
+                    onDismiss()
+                }
+                .glassProminentButtonStyle()
+                .keyboardShortcut(.defaultAction)
+                .disabled(!viewModel.isDirty)
             }
-            .keyboardShortcut("z", modifiers: .command)
-            .disabled(!viewModel.canUndo)
-
-            Button(action: { viewModel.redo() }) {
-                Image(systemName: "arrow.uturn.forward")
-            }
-            .keyboardShortcut("z", modifiers: [.command, .shift])
-            .disabled(!viewModel.canRedo)
-
-            Spacer()
-
-            Button("Cancel") {
-                viewModel.cancel()
-                onDismiss()
-            }
-            .keyboardShortcut(.cancelAction)
-
-            Button("Apply") {
-                viewModel.apply()
-                onDismiss()
-            }
-            .keyboardShortcut(.defaultAction)
-            .disabled(!viewModel.isDirty)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .glassSurface(in: .capsule, fallback: .ultraThinMaterial)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial)
+        .padding(.horizontal, 24)
+        .padding(.bottom, 20)
     }
 }

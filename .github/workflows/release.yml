@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   release:
-    runs-on: macos-15
+    runs-on: macos-26
     env:
       HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
     steps:
@@ -85,7 +85,7 @@ jobs:
             desc \"KDE Plasma KWin-style tiling window manager for macOS\"
             homepage \"https://github.com/m96-chan/KTApple\"
 
-            depends_on macos: \">= :ventura\"
+            depends_on macos: \">= :sequoia\"
 
             app \"KTApple.app\"
 

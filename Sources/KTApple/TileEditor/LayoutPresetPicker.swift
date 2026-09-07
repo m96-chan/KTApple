@@ -11,7 +11,7 @@ struct LayoutPresetPicker: View {
                 Button(preset.displayName) {
                     viewModel.applyPreset(preset)
                 }
-                .buttonStyle(.bordered)
+                .glassButtonStyle()
             }
         }
     }
