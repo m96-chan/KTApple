@@ -79,7 +79,7 @@ final class LiveEventProvider: EventProvider {
                 if pid == ProcessInfo.processInfo.processIdentifier { return nil }
 
                 var windowID: CGWindowID = 0
-                if _AXUIElementGetWindow(current, &windowID) == .success {
+                if PrivateSymbols.axWindowID(current, &windowID) == .success {
                     return windowID
                 }
             }

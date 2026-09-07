@@ -80,6 +80,12 @@ public final class AppCoordinator: DisplayObserverDelegate {
     /// Callback when active space changes (for UI layer to react).
     public var onSpaceChanged: (() -> Void)?
 
+    /// Called when accessibility trust flips, with the new state.
+    ///
+    /// Fires on both grant and revocation so the UI layer can surface the
+    /// degraded state instead of silently doing nothing.
+    public var onAccessibilityStatusChanged: ((Bool) -> Void)?
+
     public init(
         accessibilityProvider: AccessibilityCheckProvider,
         displayProvider: DisplayProvider,
@@ -108,6 +114,30 @@ public final class AppCoordinator: DisplayObserverDelegate {
         hotkeyManager.onHotkey = { [weak self] action in
             self?.handleAction(action)
         }
+    }
+
+    // MARK: - Accessibility
+
+    /// Re-check accessibility trust, reporting whether it changed.
+    ///
+    /// The state cannot be assumed constant for the lifetime of the process:
+    /// macOS revokes the permission whenever the app binary changes (a new
+    /// signature), and an OS upgrade can reset the TCC database outright. It
+    /// therefore has to be polled, in both directions — a revocation while
+    /// running is exactly the case that used to leave the app silently inert.
+    ///
+    /// Only detection lives here. When this flips to granted the owner must
+    /// restart the coordinator (`stop()` then `start()`) for windows to be
+    /// discovered; the flag alone does not backfill them.
+    @discardableResult
+    public func refreshAccessibilityStatus() -> Bool {
+        let granted = accessibilityProvider.isTrusted(promptIfNeeded: false)
+        guard granted != accessibilityGranted else { return false }
+
+        Self.log.info("accessibility trust changed: \(self.accessibilityGranted) -> \(granted)")
+        accessibilityGranted = granted
+        onAccessibilityStatusChanged?(granted)
+        return true
     }
 
     // MARK: - Lifecycle

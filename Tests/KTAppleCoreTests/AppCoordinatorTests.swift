@@ -197,6 +197,75 @@ struct AppCoordinatorTests {
         #expect(accessibilityProvider.operations.isEmpty)
     }
 
+    // MARK: - Accessibility Status Changes
+
+    @Test func refreshDetectsAccessibilityGrant() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let (coordinator, checker, _, _, _, _) = makeCoordinator(trusted: false, displays: [display])
+        coordinator.start()
+        #expect(!coordinator.accessibilityGranted)
+
+        var reported: [Bool] = []
+        coordinator.onAccessibilityStatusChanged = { reported.append($0) }
+
+        // User grants permission in System Settings while the app is running.
+        checker.isTrustedResult = true
+
+        #expect(coordinator.refreshAccessibilityStatus())
+        #expect(coordinator.accessibilityGranted)
+        #expect(reported == [true])
+    }
+
+    @Test func refreshDetectsAccessibilityRevocation() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let (coordinator, checker, _, _, _, _) = makeCoordinator(trusted: true, displays: [display])
+        coordinator.start()
+        #expect(coordinator.accessibilityGranted)
+
+        var reported: [Bool] = []
+        coordinator.onAccessibilityStatusChanged = { reported.append($0) }
+
+        // TCC reset by a macOS upgrade, or the binary signature changed.
+        checker.isTrustedResult = false
+
+        #expect(coordinator.refreshAccessibilityStatus())
+        #expect(!coordinator.accessibilityGranted)
+        #expect(reported == [false])
+    }
+
+    @Test func refreshIsSilentWhenAccessibilityIsUnchanged() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let (coordinator, _, _, _, _, _) = makeCoordinator(trusted: true, displays: [display])
+        coordinator.start()
+
+        var reported: [Bool] = []
+        coordinator.onAccessibilityStatusChanged = { reported.append($0) }
+
+        // Polling runs every couple of seconds; an unchanged state must not
+        // re-fire the callback or the UI would flicker on every tick.
+        #expect(!coordinator.refreshAccessibilityStatus())
+        #expect(!coordinator.refreshAccessibilityStatus())
+        #expect(reported.isEmpty)
+    }
+
+    @Test func refreshReportsEachFlipOfAccessibility() {
+        let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
+        let (coordinator, checker, _, _, _, _) = makeCoordinator(trusted: true, displays: [display])
+        coordinator.start()
+
+        var reported: [Bool] = []
+        coordinator.onAccessibilityStatusChanged = { reported.append($0) }
+
+        checker.isTrustedResult = false
+        #expect(coordinator.refreshAccessibilityStatus())
+        checker.isTrustedResult = true
+        #expect(coordinator.refreshAccessibilityStatus())
+        checker.isTrustedResult = false
+        #expect(coordinator.refreshAccessibilityStatus())
+
+        #expect(reported == [false, true, false])
+    }
+
     @Test func startLoadsLayouts() {
         let display = DisplayInfo(id: 1, frame: displayFrame, name: "Main")
         let (coordinator, _, _, _, _, storage) = makeCoordinator(displays: [display])

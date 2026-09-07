@@ -1,0 +1,96 @@
+name: Canary
+
+# Detects macOS / Xcode drift before it reaches users.
+#
+# KTApple ships a prebuilt DMG through a Homebrew cask, so the cask cannot
+# rebuild itself when a new macOS or Xcode arrives — a released binary simply
+# goes stale. This job builds the app the way a release would, on the newest
+# runner image with the newest installed Xcode, and opens an issue when that
+# stops working. That is the signal to cut a rebuilt release. See issue #37.
+
+on:
+  schedule:
+    # Mondays, 06:00 UTC.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: canary
+  cancel-in-progress: true
+
+jobs:
+  canary:
+    name: Build on the newest runner image
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Deliberately the newest Xcode present rather than a pinned version:
+      # the point is to find out whether the current toolchain still builds us.
+      - name: Select the newest installed Xcode
+        run: |
+          XCODE="$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)"
+          if [[ -n "$XCODE" ]]; then
+            echo "Selecting $XCODE"
+            sudo xcode-select -s "$XCODE"
+          fi
+          sw_vers
+          xcodebuild -version
+          swift --version
+          echo "macOS SDK: $(xcrun --show-sdk-version --sdk macosx)"
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        run: swift test
+
+      # Covers the packaging path too, not just compilation.
+      - name: Bundle app
+        run: ./scripts/bundle-app.sh
+
+  report:
+    name: Report drift
+    needs: canary
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Open a drift issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # One issue per outage, not one per week.
+          EXISTING="$(gh issue list --repo "$GITHUB_REPOSITORY" \
+            --state open --label canary --limit 1 --json number --jq '.[0].number // empty')"
+
+          if [[ -n "$EXISTING" ]]; then
+            gh issue comment "$EXISTING" --repo "$GITHUB_REPOSITORY" \
+              --body "Canary still failing: $RUN_URL"
+            echo "Commented on existing issue #$EXISTING"
+            exit 0
+          fi
+
+          gh label create canary --repo "$GITHUB_REPOSITORY" \
+            --color B60205 --description "Scheduled build drift detection" 2>/dev/null || true
+
+          cat > /tmp/canary-body.md <<BODY
+          The weekly canary build failed on \`macos-latest\` with the newest installed Xcode.
+
+          This usually means a new macOS or Xcode release broke the build, or that the shipped
+          binary needs rebuilding against a newer SDK. Users who install from the Homebrew cask
+          receive a prebuilt DMG, so they will not pick up a fix until a new release is cut.
+
+          Failed run: $RUN_URL
+          BODY
+
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "Canary: build broke on the newest macOS runner" \
+            --label canary \
+            --body-file /tmp/canary-body.md

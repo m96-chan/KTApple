@@ -3,18 +3,6 @@ import CoreGraphics
 import Foundation
 import KTAppleCore
 
-// MARK: - CGS Private API declarations
-
-/// Connection ID for the current window server session.
-@_silgen_name("CGSMainConnectionID")
-private func CGSMainConnectionID() -> Int32
-
-/// Returns a CFArray of dictionaries describing per-display spaces.
-/// Each dictionary has "Display Identifier" (String) and "Spaces" (Array of dicts with "id64").
-/// The current space has "Current Space" with an "id64" key.
-@_silgen_name("CGSCopyManagedDisplaySpaces")
-private func CGSCopyManagedDisplaySpaces(_ connection: Int32) -> CFArray?
-
 final class LiveSpaceProvider: SpaceProvider {
     private var observer: NSObjectProtocol?
 
@@ -62,9 +50,14 @@ final class LiveSpaceProvider: SpaceProvider {
         let currentSpaceID: Int?
     }
 
+    /// Per-display Spaces, or an empty list when the CGS private API is
+    /// unavailable — callers then behave as if there is a single Space.
+    ///
+    /// The returned dictionaries carry "Display Identifier" (String) and
+    /// "Spaces" (array of dicts keyed by "id64"); the active one is under
+    /// "Current Space".
     private func displaySpaceInfo() -> [DisplaySpaceEntry] {
-        let cid = CGSMainConnectionID()
-        guard let cfArray = CGSCopyManagedDisplaySpaces(cid) else { return [] }
+        guard let cfArray = PrivateSymbols.managedDisplaySpaces() else { return [] }
 
         let displays = cfArray as [AnyObject]
         var entries: [DisplaySpaceEntry] = []
