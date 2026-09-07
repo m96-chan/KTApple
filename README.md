@@ -155,6 +155,59 @@ Each node carries:
 - **Accessibility permission**
 - No SIP disable required
 
+## Troubleshooting
+
+### The menu bar icon shows a warning triangle
+
+Accessibility permission has been revoked. KTApple keeps running but cannot move or
+resize windows until it is restored. Click the warning row in the menu for the full
+explanation and a link straight to the right Settings pane.
+
+### Nothing happens after a macOS upgrade, or after reinstalling
+
+macOS revokes Accessibility permission whenever the app binary changes, because the code
+signature changes with it — and a macOS upgrade can reset the permission database
+outright. KTApple is ad-hoc signed, so this happens on every update.
+
+Re-granting it needs a **remove and re-add**, not a toggle:
+
+1. System Settings → Privacy & Security → Accessibility
+2. Select the existing **KTApple** entry and remove it with **−**
+3. Add it back with **+**, choosing `/Applications/KTApple.app`
+
+Toggling the existing entry off and on can leave macOS matching against the old
+signature, which looks enabled but grants nothing. KTApple detects the change within a
+few seconds and resumes on its own — no restart needed.
+
+### Collecting diagnostics
+
+KTApple logs its full environment at launch — macOS version, the SDK it was built
+against, its deployment target, code signature status, and whether each private system
+API it depends on resolved:
+
+```sh
+log show --predicate 'subsystem == "com.m96chan.KTApple"' --last 10m --info --style compact
+```
+
+Include that output when reporting a bug.
+
+### It still does not work
+
+If the log shows `Built with: macOS <old> SDK`, the installed binary predates your macOS
+version and should be rebuilt:
+
+```sh
+git clone https://github.com/m96-chan/KTApple.git
+cd KTApple
+./scripts/bundle-app.sh
+osascript -e 'tell application "KTApple" to quit' 2>/dev/null; sleep 1
+rm -rf /Applications/KTApple.app
+cp -R build/KTApple.app /Applications/KTApple.app
+open /Applications/KTApple.app
+```
+
+`cp -R` does not reliably overwrite an existing bundle on macOS, hence the `rm -rf`.
+
 ## Documentation
 
 | Guide | Description |

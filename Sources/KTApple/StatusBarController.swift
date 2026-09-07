@@ -8,31 +8,32 @@ final class StatusBarController {
     private let profileMenuTarget = ProfileMenuTarget()
     private var profilesMenuItem: NSMenuItem?
 
+    /// Warning row shown at the top of the menu while accessibility is missing.
+    private var accessibilityWarningItem: NSMenuItem?
+    private var accessibilityWarningSeparator: NSMenuItem?
+    private var isAccessibilityWarningShown = false
+
     init(
         onOpenEditor: @escaping () -> Void,
         onOpenPreferences: @escaping () -> Void,
         onSwitchProfile: @escaping (Int) -> Void,
         onSaveCurrentProfile: @escaping () -> Void,
         onExportLayout: @escaping () -> Void,
-        onImportLayout: @escaping () -> Void
+        onImportLayout: @escaping () -> Void,
+        onFixAccessibility: @escaping () -> Void = {}
     ) {
         menuTarget.onOpenEditor = onOpenEditor
         menuTarget.onOpenPreferences = onOpenPreferences
         menuTarget.onExportLayout = onExportLayout
         menuTarget.onImportLayout = onImportLayout
+        menuTarget.onFixAccessibility = onFixAccessibility
         profileMenuTarget.onSwitchProfile = onSwitchProfile
         profileMenuTarget.onSaveCurrentProfile = onSaveCurrentProfile
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
-        if let button = statusItem.button {
-            button.image = NSImage(
-                systemSymbolName: "rectangle.split.2x2",
-                accessibilityDescription: "KTApple"
-            )
-        }
-
         setupMenu()
+        updateButtonImage()
     }
 
     /// Update the status bar button to reflect the active profile name.
@@ -50,6 +51,47 @@ final class StatusBarController {
         }
     }
 
+    /// Show or hide the "accessibility permission required" state.
+    ///
+    /// Without this the app looks identical whether it is working or inert,
+    /// which is what made a TCC reset after a macOS upgrade so hard to
+    /// diagnose — the menu bar icon was the only feedback and it never
+    /// changed. See issue #37.
+    func setAccessibilityWarning(_ needed: Bool) {
+        guard needed != isAccessibilityWarningShown else { return }
+        isAccessibilityWarningShown = needed
+        updateButtonImage()
+
+        guard let menu = statusItem.menu else { return }
+        if needed {
+            let item = NSMenuItem(
+                title: "Accessibility Permission Required",
+                action: #selector(MenuActionTarget.fixAccessibility(_:)),
+                keyEquivalent: ""
+            )
+            item.image = NSImage(
+                systemSymbolName: "exclamationmark.triangle.fill",
+                accessibilityDescription: nil
+            )
+            item.target = menuTarget
+            let separator = NSMenuItem.separator()
+
+            menu.insertItem(item, at: 0)
+            menu.insertItem(separator, at: 1)
+            accessibilityWarningItem = item
+            accessibilityWarningSeparator = separator
+        } else {
+            if let item = accessibilityWarningItem, menu.items.contains(item) {
+                menu.removeItem(item)
+            }
+            if let separator = accessibilityWarningSeparator, menu.items.contains(separator) {
+                menu.removeItem(separator)
+            }
+            accessibilityWarningItem = nil
+            accessibilityWarningSeparator = nil
+        }
+    }
+
     /// Rebuild the Profiles submenu with an updated profile list.
     func rebuildProfilesMenu(_ profiles: [LayoutProfile]) {
         guard let submenu = profilesMenuItem?.submenu else { return }
@@ -58,6 +100,19 @@ final class StatusBarController {
     }
 
     // MARK: - Private
+
+    private func updateButtonImage() {
+        guard let button = statusItem.button else { return }
+        let symbol = isAccessibilityWarningShown
+            ? "exclamationmark.triangle.fill"
+            : "rectangle.split.2x2"
+        button.image = NSImage(
+            systemSymbolName: symbol,
+            accessibilityDescription: isAccessibilityWarningShown
+                ? "KTApple — accessibility permission required"
+                : "KTApple"
+        )
+    }
 
     private func setupMenu() {
         let menu = NSMenu()
@@ -151,11 +206,13 @@ final class MenuActionTarget: NSObject {
     var onOpenPreferences: (() -> Void)?
     var onExportLayout: (() -> Void)?
     var onImportLayout: (() -> Void)?
+    var onFixAccessibility: (() -> Void)?
 
     @objc func openEditor(_ sender: Any?) { onOpenEditor?() }
     @objc func openPreferences(_ sender: Any?) { onOpenPreferences?() }
     @objc func exportLayout(_ sender: Any?) { onExportLayout?() }
     @objc func importLayout(_ sender: Any?) { onImportLayout?() }
+    @objc func fixAccessibility(_ sender: Any?) { onFixAccessibility?() }
 }
 
 /// NSObject target for dynamic profile menu actions.

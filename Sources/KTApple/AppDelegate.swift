@@ -16,14 +16,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var gapResizeHandler: GapResizeHandler?
     private var mouseDownMonitor: Any?
     private var accessibilityTimer: Timer?
-    private var hasShownAccessibilityPrompt = false
     /// Timestamp of last hotkey-driven focus change. Used to prevent
     /// `updateFocusedWindow` from overwriting `focusedWindowID` with
     /// stale data before macOS fully processes the focus switch.
     private var lastHotkeyFocusTime: Date?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        log.info("applicationDidFinishLaunching AXIsProcessTrusted=\(AXIsProcessTrusted())")
+        LaunchDiagnostics.logEnvironment()
         let accessibilityChecker = LiveAccessibilityChecker()
         let displayProvider = LiveDisplayProvider()
         let hotkeyProvider = LiveHotkeyProvider()
@@ -107,15 +106,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupDragDrop()
         setupGapResize()
 
-        // If accessibility not granted, open System Settings and poll until granted
-        if !coordinator.accessibilityGranted {
-            hasShownAccessibilityPrompt = true
-            NSWorkspace.shared.open(
-                URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-            )
-            startAccessibilityPolling()
-        }
-
         // Track focused window (on app activation AND mouseDown)
         startFocusTracking()
 
@@ -137,10 +127,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onImportLayout: { [weak self] in
                 self?.importLayouts()
+            },
+            onFixAccessibility: { [weak self] in
+                self?.requestAccessibilityPermission(explain: true)
             }
         )
         // Populate initial profile list in the status bar menu
         statusBarController?.rebuildProfilesMenu(coordinator.profiles)
+
+        // Surface the permission state and keep watching it. Trust is not
+        // constant for the process lifetime: a macOS upgrade can reset TCC and
+        // reinstalling changes the signature, both of which revoke it.
+        coordinator.onAccessibilityStatusChanged = { [weak self] granted in
+            self?.handleAccessibilityStatusChanged(granted: granted)
+        }
+        statusBarController?.setAccessibilityWarning(!coordinator.accessibilityGranted)
+        if !coordinator.accessibilityGranted {
+            // Let macOS render its own prompt at launch. The persistent menu
+            // bar warning carries the message from here on, and clicking it
+            // brings up the fuller explanation.
+            requestAccessibilityPermission(explain: false)
+        }
+        startAccessibilityPolling()
     }
 
     // MARK: - Drag & Drop
@@ -206,21 +214,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let trusted = AXIsProcessTrusted()
         log.info("openTileEditor AXIsProcessTrusted=\(trusted)")
         guard trusted else {
-            // Always open System Preferences when user explicitly requests editor
-            NSWorkspace.shared.open(
-                URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-            )
-            if accessibilityTimer == nil {
-                startAccessibilityPolling()
-            }
+            // The user explicitly asked for the editor, so explain why it did
+            // not open rather than silently doing nothing.
+            requestAccessibilityPermission(explain: true)
             return
         }
 
-        // If permission was granted after launch, re-start coordinator to pick up windows
-        if let coordinator, !coordinator.accessibilityGranted {
-            coordinator.stop()
-            coordinator.start()
-        }
+        // Permission may have been granted moments ago, before the next poll
+        // tick. Go through refresh rather than restarting the coordinator
+        // directly, so the menu bar warning clears with it.
+        coordinator?.refreshAccessibilityStatus()
 
         // Set up handlers if not yet initialized (e.g. accessibility was granted after launch)
         if dragDropHandler == nil {
@@ -396,19 +399,100 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateFocusedWindow()
     }
 
+    // MARK: - Accessibility
+
+    /// Poll interval while waiting for the user to grant permission.
+    private static let accessibilityPollWaiting: TimeInterval = 2.0
+    /// Poll interval once permission is held — revocation is rare, but it does
+    /// happen (TCC reset by an OS upgrade, reinstall changing the signature).
+    private static let accessibilityPollGranted: TimeInterval = 10.0
+
+    /// Watch the accessibility trust state in both directions, for as long as
+    /// the app runs.
+    ///
+    /// The previous implementation polled only until permission was granted
+    /// and then stopped, so a later revocation left the app running but inert
+    /// with no indication anywhere. See issue #37.
     private func startAccessibilityPolling() {
-        accessibilityTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            guard AXIsProcessTrusted() else { return }
+        accessibilityTimer?.invalidate()
+        let granted = coordinator?.accessibilityGranted ?? false
+        let interval = granted
+            ? Self.accessibilityPollGranted
+            : Self.accessibilityPollWaiting
+
+        accessibilityTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
             Task { @MainActor [weak self] in
-                self?.accessibilityTimer?.invalidate()
-                self?.accessibilityTimer = nil
-                // stop() resets isRunning so start() re-checks accessibilityGranted
-                self?.coordinator?.stop()
-                self?.coordinator?.start()
-                self?.setupDragDrop()
-                self?.setupGapResize()
-                log.info("Accessibility granted — coordinator restarted, handlers enabled")
+                self?.coordinator?.refreshAccessibilityStatus()
             }
+        }
+    }
+
+    /// React to a trust change reported by the coordinator.
+    private func handleAccessibilityStatusChanged(granted: Bool) {
+        log.info("accessibility status changed: granted=\(granted)")
+        statusBarController?.setAccessibilityWarning(!granted)
+
+        if granted {
+            // stop() resets isRunning so start() re-checks accessibilityGranted
+            // and backfills the windows that could not be discovered before.
+            coordinator?.stop()
+            coordinator?.start()
+            setupDragDrop()
+            setupGapResize()
+            log.info("Accessibility granted — coordinator restarted, handlers enabled")
+        } else {
+            log.notice("Accessibility revoked — window management is disabled until it is restored")
+        }
+
+        // Re-arm the timer at the interval matching the new state.
+        startAccessibilityPolling()
+    }
+
+    /// Ask for accessibility permission.
+    ///
+    /// Pass `explain: true` for user-initiated requests: macOS's own prompt
+    /// says nothing about the reinstall-and-re-add dance that this app's
+    /// ad-hoc signature requires, so an alert covers that before sending the
+    /// user to Settings. At launch pass `false` — the system prompt is enough,
+    /// and the menu bar warning stays visible afterwards.
+    private func requestAccessibilityPermission(explain: Bool) {
+        // Registers KTApple in the Accessibility list and lets macOS render
+        // its own prompt — the one route into Settings that cannot go stale
+        // when the URL scheme changes in a later release.
+        if AccessibilitySettings.requestViaSystemPrompt() {
+            coordinator?.refreshAccessibilityStatus()
+            return
+        }
+
+        // At launch the system prompt is the whole interaction; stacking our
+        // own alert on top of it would just be two dialogs saying the same
+        // thing. The explanation is reserved for when the user asks, by
+        // clicking the menu bar warning or trying to open the editor.
+        if explain {
+            let alert = NSAlert()
+            alert.messageText = "KTApple Needs Accessibility Permission"
+            alert.informativeText = """
+                KTApple cannot move or resize windows without Accessibility access.
+
+                macOS revokes this permission whenever the app is updated or reinstalled, \
+                because the code signature changes. A macOS upgrade can reset it as well.
+
+                In System Settings, remove any existing KTApple entry under Privacy & \
+                Security > Accessibility, then add it back. Toggling the existing entry \
+                off and on may keep using the stale signature.
+                """
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Open System Settings")
+            alert.addButton(withTitle: "Later")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+
+        if !AccessibilitySettings.openPane() {
+            showAlert(
+                message: "Could Not Open System Settings",
+                info: "Open System Settings > Privacy & Security > Accessibility "
+                    + "and enable KTApple manually."
+            )
         }
     }
 
@@ -430,7 +514,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         var windowID: CGWindowID = 0
-        guard _AXUIElementGetWindow(focusedWindow as! AXUIElement, &windowID) == .success else {
+        guard PrivateSymbols.axWindowID(focusedWindow as! AXUIElement, &windowID) == .success else {
             return
         }
 

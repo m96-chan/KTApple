@@ -4,12 +4,6 @@ import CoreGraphics
 import Foundation
 import KTAppleCore
 
-// Private API used by all major macOS tiling WMs (yabai, AeroSpace, Amethyst)
-// to map between AXUIElement and CGWindowID.
-@_silgen_name("_AXUIElementGetWindow")
-@discardableResult
-func _AXUIElementGetWindow(_ element: AXUIElement, _ windowID: UnsafeMutablePointer<CGWindowID>) -> AXError
-
 final class LiveAccessibilityProvider: AccessibilityProvider {
 
     func discoverWindows() -> [WindowInfo] {
@@ -134,7 +128,7 @@ final class LiveAccessibilityProvider: AccessibilityProvider {
 
         for window in windows {
             var wid: CGWindowID = 0
-            if _AXUIElementGetWindow(window, &wid) == .success, wid == windowID {
+            if PrivateSymbols.axWindowID(window, &wid) == .success, wid == windowID {
                 return window
             }
         }
@@ -162,7 +156,7 @@ final class LiveAccessibilityProvider: AccessibilityProvider {
 
         for window in windows {
             var wid: CGWindowID = 0
-            guard _AXUIElementGetWindow(window, &wid) == .success,
+            guard PrivateSymbols.axWindowID(window, &wid) == .success,
                   wid == targetWindowID else {
                 continue
             }
